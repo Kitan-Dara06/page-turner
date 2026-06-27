@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     ADMIN_USER_UUID: Optional[str] = None
 
     # ── CORS ───────────────────────────────────────────────────
-    # Space-separated allowed origins. Add prod domain when deploying.
-    FRONTEND_ORIGINS: str = "http://localhost:3000"
+    # Space-separated allowed origins. Add staging/prod domains when deploying.
+    FRONTEND_ORIGINS: str = "http://localhost:3000 https://page-turner-seven.vercel.app"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

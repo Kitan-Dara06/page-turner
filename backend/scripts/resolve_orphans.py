@@ -14,6 +14,7 @@ from app.db.session import SessionLocal
 DRY_RUN = "--dry-run" in sys.argv
 
 CASING_MAPS = {
+    # ── Genre → Canonical
     "dark romance": "Dark Romance",
     "historical romance": "Historical Romance",
     "contemporary romance": "Contemporary Romance",
@@ -100,6 +101,25 @@ CASING_MAPS = {
     "sad": "Emotional Intensity",
     "tense": "Psychological Thriller",
     "romantic": "Relationship Dynamics",
+    "humor": "Humorous Tone",
+    "satire": "Satire",
+    "sequel": "Second Chance Romance",
+    "rivalry": "Internal Conflict",
+    "jealousy": "Internal Conflict",
+    "first love": "Bildungsroman",
+    "unreliable narrator": "Memory & Time",
+    "standalone": "Romantic Fantasy",
+    "romantasy": "Romantic Fantasy",
+    "twist ending": "Red Herring",
+    "autobiography": "Memoir",
+    "philosophy": "Thematic Core",
+    "atmospheric": "Dark Tone",
+    "19th century": "Historical",
+    "gore": "Psychological Horror",
+    "religion": "Thematic Core",
+    "adultery": "Internal Conflict",
+    "aging": "Grief/Loss",
+    "grimdark": "Dark Tone",
 }
 
 PROMOTE_NODES = {
@@ -108,6 +128,24 @@ PROMOTE_NODES = {
     "spicy": "Steamy Romance",
     "graphic": "Graphic Content",
     "explicit": "Explicit Content",
+    # New literary nodes
+    "dark academia": "Dark Academia",
+    "marriage of convenience": "Marriage of Convenience",
+    "sports romance": "Sports Romance",
+    "paranormal romance": "Paranormal Romance",
+    "omegaverse": "Omegaverse",
+    "why choose": "Why Choose",
+    "wallflower": "Wallflower",
+    "possessive hero": "Possessive Hero",
+    "rural setting": "Rural Setting",
+    "artists": "Artist Protagonist",
+    "fable": "Fable",
+    "magician": "Magician",
+    "hacking": "Hacking & Cyber",
+    "adventure stories": "Quest Narrative",
+    "exploration": "Discovery Narrative",
+    "friendship": "Found Family",
+    "slavery": "Enslavement",
 }
 
 

@@ -39,6 +39,9 @@ from app.workers.enrichment_tasks import enrich_book_task
 
 logger = logging.getLogger(__name__)
 
+# ── Import ThreadPoolExecutor for parallel LLM calls ──
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 def generate_recommendations(
     db: Session, user_uuid: str, raw_query: str, session_id: str
@@ -51,28 +54,48 @@ def generate_recommendations(
     # Ensure user profile exists (new users from real auth have none)
     user_intelligence.initialize_user_profile(db, user_uuid)
 
-    # ── Series detection (SRS §5.4) ──
-    # If the user mentions a series by name, resolve it and switch to
-    # series-aware similarity: aggregate all series books and search for
-    # books with similar DNA from any author.
-    series_ctx = resolve_series_from_query(db, raw_query)
+    # ── Parallel: Series detection + Query engine ──
+    # These are independent LLM calls. Running them concurrently
+    # cuts pipeline latency from ~13s to ~8s.
+    series_ctx = None
     _series_tropes = None
-    if series_ctx:
-        logger.info(
-            f"Series detected: {series_ctx.series_title} "
-            f"({series_ctx.book_count} books, source={series_ctx.source})"
-        )
-        if series_ctx.aggregated_tropes:
-            _series_tropes = [name for name, _ in series_ctx.aggregated_tropes[:8]]
-            logger.info(f"Series aggregated tropes: {_series_tropes}")
-        # If series found, always route to similarity (not lookup)
-        query_type_from_series = "similarity"
-    else:
-        query_type_from_series = None
+    query_type_from_series = None
+    expanded_query = raw_query
+    mood_tags_delta = {}
+    query_trope_names: List[str] = []
+    anchor_author: Optional[str] = None
+    query_intent = "discovery"
 
-    expanded_query, mood_tags_delta, query_trope_names, anchor_author, query_intent = (
-        query_engine.process_reader_query(db, user_uuid, raw_query)
-    )
+    def _run_series():
+        return resolve_series_from_query(db, raw_query)
+
+    def _run_query():
+        return query_engine.process_reader_query(db, user_uuid, raw_query)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future_series = pool.submit(_run_series)
+        future_query = pool.submit(_run_query)
+
+        # Process series result (usually finishes first)
+        series_ctx = future_series.result()
+        if series_ctx:
+            logger.info(
+                f"Series detected: {series_ctx.series_title} "
+                f"({series_ctx.book_count} books, source={series_ctx.source})"
+            )
+            if series_ctx.aggregated_tropes:
+                _series_tropes = [name for name, _ in series_ctx.aggregated_tropes[:8]]
+                logger.info(f"Series aggregated tropes: {_series_tropes}")
+            query_type_from_series = "similarity"
+
+        # Process query result
+        (
+            expanded_query,
+            mood_tags_delta,
+            query_trope_names,
+            anchor_author,
+            query_intent,
+        ) = future_query.result()
 
     # Intent priority: series detection > query engine intent
     query_type = query_type_from_series or query_intent
@@ -439,10 +462,14 @@ def generate_recommendations(
                 f"Exploration candidate '{_exploration_candidate.title}' injected at position {_pos}"
             )
 
-    # Author spotlight — only for similarity queries with a detected anchor author
+    # Author spotlight — DB-only (no Google Books on hot path).
+    # Returns catalog entries already in the system. Frontend can load
+    # the full spotlight separately via the authors endpoint.
     author_spotlight = None
     if anchor_author and query_type in ("similarity", "lookup"):
-        author_spotlight = _build_author_spotlight(db, anchor_author)
+        author_spotlight = _build_author_spotlight(
+            db, anchor_author, fallback_to_gb=False
+        )
 
     # TBR strip — mood-matched TBR books returned as a separate component
     tbr_matches = (
@@ -1059,13 +1086,12 @@ def _build_explanation(
     return "Semantically matches your current mood query."
 
 
-def _build_author_spotlight(db: Session, author_name: str) -> Optional[AuthorSpotlight]:
+def _build_author_spotlight(
+    db: Session, author_name: str, fallback_to_gb: bool = True
+) -> Optional[AuthorSpotlight]:
     """
     Build an author spotlight showing the author's catalog.
-
-    First pass: query the local DB for all Works by this author (any
-    enrichment_status). Second pass: supplement with Google Books to catch
-    books not yet in the catalog. Deduplicates by title.
+    When fallback_to_gb=False (hot path), only returns DB entries — no API calls.
     """
     from sqlalchemy import func as sf
 
@@ -1126,42 +1152,42 @@ def _build_author_spotlight(db: Session, author_name: str) -> Optional[AuthorSpo
                 )
             )
 
-    # 2. Google Books supplement — fill gaps in the catalog.
-    #    Only includes books that exist in the DB (have a valid work_uuid).
-    #    Non-DB entries can't have TBR buttons and clutter the sidebar.
-    #    Retail bundle/collection patterns are filtered out.
-    try:
-        gb_results = google_books.search_by_title_author("", author_name)[:20]
-        for item in gb_results:
-            vol = item.get("volumeInfo", {})
-            title = vol.get("title", "").strip()
-            if not title or title.lower() in seen_titles:
-                continue
-            if any(p in title.lower() for p in _SKIP_TITLE_PATTERNS):
-                continue
-            seen_titles.add(title.lower())
-            # Check if this book exists in the DB before adding to sidebar
-            _existing = (
-                db.execute(select(Work).where(sf.lower(Work.title) == title.lower()))
-                .scalars()
-                .first()
-            )
-            if not _existing:
-                continue  # Skip books not yet in the catalog
-            spotlight_books.append(
-                AuthorSpotlightBook(
-                    work_uuid=str(_existing.work_uuid),
-                    title=_existing.title,
-                    cover_url=_existing.cover_url
-                    if hasattr(_existing, "cover_url")
-                    else None,
-                    publication_year=_existing.publication_date.year
-                    if _existing.publication_date
-                    else None,
+    # 2. Google Books supplement — skip on hot path.
+    #    On cold path: fills gaps in the catalog. On hot path: adds 6s latency.
+    if fallback_to_gb:
+        try:
+            gb_results = google_books.search_by_title_author("", author_name)[:20]
+            for item in gb_results:
+                vol = item.get("volumeInfo", {})
+                title = vol.get("title", "").strip()
+                if not title or title.lower() in seen_titles:
+                    continue
+                if any(p in title.lower() for p in _SKIP_TITLE_PATTERNS):
+                    continue
+                seen_titles.add(title.lower())
+                _existing = (
+                    db.execute(
+                        select(Work).where(sf.lower(Work.title) == title.lower())
+                    )
+                    .scalars()
+                    .first()
                 )
-            )
-    except Exception as e:
-        logger.warning(f"Google Books spotlight fallback failed: {e}")
+                if not _existing:
+                    continue
+                spotlight_books.append(
+                    AuthorSpotlightBook(
+                        work_uuid=str(_existing.work_uuid),
+                        title=_existing.title,
+                        cover_url=_existing.cover_url
+                        if hasattr(_existing, "cover_url")
+                        else None,
+                        publication_year=_existing.publication_date.year
+                        if _existing.publication_date
+                        else None,
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"Google Books spotlight supplement failed: {e}")
 
     if not spotlight_books:
         return None
