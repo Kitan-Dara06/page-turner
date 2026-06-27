@@ -1,0 +1,119 @@
+.page {
+  padding: 48px 24px 80px;
+}
+.container {
+  max-width: 1024px;
+  margin: 0 auto;
+}
+.title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  margin-bottom: 6px;
+}
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 24px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.controls label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.controls select {
+  margin-left: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.table th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tagCell {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+.numCell {
+  text-align: center;
+  color: var(--accent);
+}
+.dateCell {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.actionsCell {
+  min-width: 260px;
+}
+
+.actionRow, .mapRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.mapRow select {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  max-width: 180px;
+}
+
+.actionBtn {
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.promoteBtn:hover { background: rgba(76,175,130,0.15); border-color: rgba(76,175,130,0.35); color: var(--success); }
+.mapBtn:hover    { background: rgba(107,159,232,0.15); border-color: rgba(107,159,232,0.35); color: var(--info); }
+.dismissBtn:hover { background: rgba(224,92,92,0.1);  border-color: rgba(224,92,92,0.25);  color: var(--danger); }
+
+.loading, .empty {
+  text-align: center;
+  padding: 48px 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}

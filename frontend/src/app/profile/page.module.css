@@ -1,0 +1,482 @@
+.page {
+    padding: 48px 24px 80px;
+}
+.container {
+    max-width: 860px;
+    margin: 0 auto;
+}
+
+.header {
+    margin-bottom: 32px;
+}
+.title {
+    font-family: "Playfair Display", serif;
+    font-size: 1.6rem;
+    margin-bottom: 8px;
+}
+.subtitle {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.6;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
+}
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cardHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.dimName {
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: "Playfair Display", serif;
+}
+.dimValue {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+.dimQuestion {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.barTrack {
+    height: 6px;
+    background: var(--surface-raised);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.barFill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.barHigh {
+    background: var(--accent);
+}
+.barMid {
+    background: var(--info);
+}
+.barLow {
+    background: var(--text-muted);
+}
+
+.barLabels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.interpretation {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.loading,
+.emptyState {
+    text-align: center;
+    padding: 48px 0;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+/* ── Phase Banner ────────────────────────────────────────── */
+.phaseBanner {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+}
+.phase_genre_sprint {
+    background: rgba(201, 168, 76, 0.08);
+    border-color: rgba(201, 168, 76, 0.2);
+}
+.phase_exploration {
+    background: rgba(107, 159, 232, 0.08);
+    border-color: rgba(107, 159, 232, 0.2);
+}
+.phase_comfort {
+    background: rgba(76, 175, 130, 0.08);
+    border-color: rgba(76, 175, 130, 0.2);
+}
+.phase_dormant {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--border);
+}
+.phase_active {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--border);
+}
+
+.phaseIcon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.phaseDesc {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+.phaseMeta {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+    display: block;
+}
+
+/* ── Calibration Banner ──────────────────────────────────── */
+.calibrationBanner {
+    display: flex;
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 32px;
+    box-shadow: var(--shadow-sm);
+}
+
+.calibrationIcon {
+    font-size: 1.6rem;
+    flex-shrink: 0;
+}
+
+.calibrationContent {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.calibrationTextHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.calibrationTextHeader h3 {
+    font-family: "Playfair Display", serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--accent-dim);
+}
+
+.calibrationTextHeader span {
+    font-family: "Inter", sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.calibrationDesc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.calibrationProgressBg {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-mid);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.calibrationProgressFill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #f59e0b);
+    border-radius: var(--radius-full);
+}
+
+.calibrationMeta {
+    display: flex;
+    justify-content: space-between;
+    font-family: "Inter", sans-serif;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* ── Tabs Styling ────────────────────────────────────────── */
+.tabsHeader {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+    gap: 16px;
+}
+
+.tabBtn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 12px 16px;
+    font-family: "Inter", sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tabBtn:hover {
+    color: var(--text-primary);
+}
+
+.activeTabBtn {
+    color: var(--accent-dim);
+    border-bottom-color: var(--accent);
+}
+
+/* ── Timeline Activity Styling ───────────────────────────── */
+.timelineContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.emptyTimeline {
+    padding: 48px;
+    text-align: center;
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.timelineList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.timelineItem {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.15s ease;
+}
+
+.timelineItem:hover {
+    border-color: var(--border-accent);
+}
+
+.timelineLeft {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--surface-raised);
+    padding-bottom: 8px;
+}
+
+.eventBadge {
+    font-family: "Inter", sans-serif;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
+}
+
+.badgeRead {
+    background: rgba(16, 185, 129, 0.08);
+    color: #047857;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.badgeTbr {
+    background: var(--accent-action-dim);
+    color: var(--accent-action);
+    border: 1px solid var(--accent-action-border);
+}
+
+.badgePass {
+    background: rgba(239, 68, 68, 0.08);
+    color: #b91c1c;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.badgeQuery {
+    background: var(--accent-glow);
+    color: var(--accent-dim);
+    border: 1px solid var(--border-accent);
+}
+
+.badgeDefault {
+    background: var(--bg-mid);
+    color: var(--text-muted);
+}
+
+.eventTime {
+    font-family: "Inter", sans-serif;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.timelineContent {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.timelineRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.eventDescription {
+    font-family: "Inter", sans-serif;
+    font-size: 0.92rem;
+    color: var(--text-primary);
+    line-height: 1.45;
+}
+
+.queryHighlight {
+    font-family: "Playfair Display", serif;
+    font-style: italic;
+    color: var(--accent-dim);
+    font-weight: 600;
+}
+
+.coverThumbnail {
+    width: 36px;
+    flex-shrink: 0;
+}
+
+.thumbImage {
+    width: 100%;
+    aspect-ratio: 2/3;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.debugActions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.debugBtn {
+    background: transparent;
+    border: none;
+    font-family: "Inter", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s ease;
+}
+
+.debugBtn:hover {
+    background: var(--accent-glow);
+    color: var(--accent-dim);
+}
+
+/* Debug snapshot panel */
+.debugPanel {
+    background: var(--bg-mid);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    animation: slideDown 0.25s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.debugTitle {
+    font-family: "Inter", sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.debugGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.debugRow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.debugKey {
+    font-family: "Inter", sans-serif;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    width: 180px;
+    flex-shrink: 0;
+    font-weight: 500;
+}
+
+.debugBarBg {
+    flex: 1;
+    height: 6px;
+    background: var(--surface);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.debugBarFill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: var(--radius-full);
+}
+
+.debugValue {
+    font-family: "Inter", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    width: 32px;
+    text-align: right;
+}

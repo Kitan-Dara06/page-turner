@@ -1,0 +1,52 @@
+# Retry of timed-out tests
+
+
+## Fantasy - Discovery(2)
+**Query:** chosen one epic destiny
+**ERROR:** timed out
+
+## Fantasy - Discovery(3)
+**Query:** dark academia magic school
+**Time:** 88.23s
+**Results:** 6
+**Moods:** darkness_tolerance, angst_level, thematic_density, pacing_preference, prose_density, plot_vs_character, setting_scope, speculative_deviation, emotional_intensity, violence_tolerance
+  The Hating Game by Sally Thorne
+    Known for Enemies to Lovers, Grumpy/Sunshine, Relationship Dynamics.
+  The Kiss Quotient by Helen Hoang
+    Known for Relationship Dynamics, Identity/Self-Discovery, Internal Conflict.
+  The Secret History by Donna Tartt
+    Known for Dark Academia, Morally Grey, Mysteries.
+  Hell Bent by Leigh Bardugo
+    Known for Quests, Dark Academia, Magic School.
+  Jonathan Strange & Mr Norrell by Susanna Clarke
+    Known for Alternate History, Historical, Relationship Dynamics.
+  The Night Circus by Erin Morgenstern
+    Known for Interpersonal Conflict, Historical, Magical Realism.
+
+## SciFi - Discovery(3)
+**Query:** space opera political intrigue
+**Time:** 117.21s
+**Results:** 10
+**Moods:** setting_scope, speculative_deviation, thematic_density, plot_vs_character, pacing_preference, angst_level, emotional_intensity
+  Leviathan Wakes by James S.A. Corey
+    Known for Future, Space Opera, Systemic/Societal Conflict.
+  A Memory Called Empire by Arkady Martine
+    Known for Space Opera, Memory & Time, Systemic/Societal Conflict.
+  Foundation by Isaac Asimov
+    Known for Space Opera, Future, Epic.
+  The Warrior's Apprentice by Lois McMaster Bujold
+    Known for Space Opera, Future, Military Sci-Fi.
+  To Sleep in a Sea of Stars by Christopher Paolini
+    Known for Epic, Space Opera, Future.
+  Ancillary Justice by Ann Leckie
+    Known for Quests, Identity/Self-Discovery, War & Its Aftermath.
+  The Player of Games by Iain M. Banks
+    Known for Space Opera, Future, Tournaments/Death Games.
+  The Three-Body Problem by Cixin Liu
+    Known for Systemic/Societal Conflict, War & Its Aftermath, Survival/External.
+  A Fire Upon the Deep by Vernor Vinge
+    Known for Future, Space Opera, War & Its Aftermath.
+
+## SciFi - Discovery(3)
+**Query:** space opera political intrigue
+**ERROR:** 'NoneType' object has no attribute 'get'

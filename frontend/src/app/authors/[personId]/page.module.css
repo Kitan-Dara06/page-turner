@@ -1,0 +1,223 @@
+.page {
+    padding: 48px 24px 80px;
+}
+.container {
+    max-width: 720px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+}
+
+/* ── Author header ─────────────────────────────────────────── */
+.authorHeader {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+.authorAvatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--accent-glow);
+    border: 2px solid var(--border-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Playfair Display", serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--accent);
+    flex-shrink: 0;
+    letter-spacing: 0.04em;
+}
+.authorName {
+    font-size: 2rem;
+    font-family: "Playfair Display", serif;
+    font-weight: 700;
+}
+.penNames {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+.penNames em {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.penNamePill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: var(--radius-full);
+    background: var(--accent-glow);
+    border: 1px solid var(--border-accent);
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+    transition: all var(--transition);
+}
+.penNamePill:hover {
+    background: rgba(201, 168, 76, 0.2);
+    color: var(--text-primary);
+}
+
+/* ── Section ──────────────────────────────────────────────── */
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.sectionTitle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.1rem;
+    font-family: "Playfair Display", serif;
+    color: var(--text-secondary);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+.sectionIcon {
+    color: var(--accent);
+    font-size: 0.9rem;
+}
+
+/* ── Series accordion ─────────────────────────────────────── */
+.seriesList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.seriesBlock {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: border-color var(--transition);
+}
+.seriesBlock:hover {
+    border-color: var(--border-accent);
+}
+.seriesToggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: "Inter", sans-serif;
+    transition: background var(--transition);
+}
+.seriesToggle:hover {
+    background: var(--surface-raised);
+}
+.seriesTitle {
+    flex: 1;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: "Playfair Display", serif;
+}
+.seriesCount {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.chevron {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.seriesWorks {
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+}
+.seriesWork {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 18px;
+    border-bottom: 1px solid var(--border);
+    transition: background var(--transition);
+}
+.seriesWork:last-child {
+    border-bottom: none;
+}
+.seriesWork:hover {
+    background: var(--surface-raised);
+}
+
+.orderBadge {
+    width: 36px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-glow);
+    border: 1px solid var(--border-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+.workTitle {
+    flex: 1;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.completeStar {
+    font-size: 0.9rem;
+    margin-left: 2px;
+    vertical-align: middle;
+}
+
+.readTick {
+    color: var(--success);
+    font-weight: 600;
+}
+
+.nonCoreBadge {
+    flex-shrink: 0;
+}
+
+/* ── Standalones ──────────────────────────────────────────── */
+.standaloneGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+}
+.standaloneCard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    transition: all var(--transition);
+}
+.standaloneCard:hover {
+    border-color: var(--border-accent);
+    transform: translateY(-2px);
+}
+.standaloneTitle {
+    font-size: 0.875rem;
+    font-family: "Playfair Display", serif;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Skeletons ────────────────────────────────────────────── */
+.skeletonName {
+    height: 48px;
+    width: 280px;
+    border-radius: var(--radius-md);
+}
+.skeletonSection {
+    height: 160px;
+    border-radius: var(--radius-md);
+}

@@ -1,0 +1,508 @@
+# PageTurner Genre Test Results
+# Started: 2026-06-13 17:30:49
+# Run: PYTHONPATH=$PWD .venv/bin/python scripts/genre_tests.py
+
+
+## Fantasy - Lookup
+**Query:** books by Leigh Bardugo
+**Response:** 39.08s
+**Expected:** lookup
+**Results:** 1
+**Moods:** darkness_tolerance, angst_level, violence_tolerance, thematic_density, pacing_preference, prose_density, plot_vs_character, setting_scope, speculative_deviation, emotional_intensity, standalone_preference, explicit_content_level, romance_centrality
+**Rewritten:** Explore the complete bibliography and entire works of author Leigh Bardugo, incl
+
+  [tbr] Mr. Sin by S J Tilly
+    Known for Relationship Dynamics, Morally Grey, Mafia Romance.
+------------------------------------------------------------
+
+## Fantasy - Lookup(2)
+**Query:** The Lies of Locke Lamora series
+**Response:** 12.42s
+**Expected:** lookup
+**Results:** 0
+**Moods:** darkness_tolerance, angst_level, violence_tolerance, thematic_density, pacing_preference, plot_vs_character, setting_scope, speculative_deviation, emotional_intensity, standalone_preference
+**Rewritten:** Books similar to "The Lies of Locke Lamora" series, urban fantasy, high fantasy,
+  (no results)
+------------------------------------------------------------
+
+## Fantasy - Discovery
+**Query:** found family heist fantasy
+**Response:** 47.07s
+**Expected:** discovery
+**Results:** 8
+**Moods:** darkness_tolerance, angst_level, violence_tolerance, pacing_preference, plot_vs_character, setting_scope, speculative_deviation, emotional_intensity, romance_centrality
+**Rewritten:** Stories featuring a chosen family of misfits, rogues, or outcasts who band toget
+
+  [vector] The Gutter Prayer by Gareth Hanrahan
+    Semantically matches your current mood query.
+
+  [vector] Assassin's Apprentice by Robin Hobb
+    Known for Internal Conflict, Identity/Self-Discovery, The Mentor.
+
+  [vector] The Night Circus by Erin Morgenstern
+    Known for Interpersonal Conflict, Historical, Relationship Dynamics.
+
+  [llm] Six of Crows by Leigh Bardugo
+    Known for Heists, Found Family Formation, Morally Grey.
+
+  [llm] The Lies of Locke Lamora by Scott Lynch
+    Known for Heists, Found Family Formation, Morally Grey.
+
+  [llm] Mistborn: The Final Empire by Brandon Sanderson
+    Known for Rebellions, Heists, Epic.
+
+  [llm] The Palace Job by Patrick Weekes
+    Known for Heists, Corruption of Power, Quests.
+
+  [llm] The Gilded Wolves by Roshani Chokshi
+    Known for Historical, Quests, Mysteries.
+------------------------------------------------------------
+
+## Fantasy - Discovery(2)
+**Query:** chosen one epic destiny
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Fantasy - Discovery(3)
+**Query:** dark academia magic school
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Fantasy - Similarity
+**Query:** like Six of Crows but adult
+**Response:** 49.94s
+**Expected:** similarity
+**Results:** 10
+**Moods:** darkness_tolerance, angst_level, violence_tolerance, thematic_density, prose_density, explicit_content_level
+**Rewritten:** Adult fantasy heist novel with morally ambiguous characters, intricate planning,
+
+  [vector] The Palace Job by Patrick Weekes
+    Known for Heists, Corruption of Power, Quests.
+
+  [vector] The Lies of Locke Lamora by Scott Lynch
+    Known for Heists, Found Family Formation, Morally Grey.
+
+  [vector] Six of Crows by Leigh Bardugo
+    Known for Heists, Anti-Hero, Morally Grey.
+
+  [vector] The Girl with the Dragon Tattoo by Stieg Larsson
+    Known for Grounded, Mysteries, Whodunit.
+
+  [vector] The Blade Itself by Joe Abercrombie
+    Known for War & Its Aftermath, Morally Grey, Anti-Hero.
+
+  [vector] Assassin's Apprentice by Robin Hobb
+    Known for Identity/Self-Discovery, Internal Conflict, The Mentor.
+
+  [vector] The Gutter Prayer by Gareth Hanrahan
+    Semantically matches your current mood query.
+
+  [vector] The Name of the Wind by Patrick Rothfuss
+    Known for Identity/Self-Discovery, Magic School, Chosen One.
+
+  [vector] The Night Circus by Erin Morgenstern
+    Known for Historical, Interpersonal Conflict, Relationship Dynamics.
+
+  [llm] Foundryside by Robert Jackson Bennett
+    Semantically matches your current mood query.
+------------------------------------------------------------
+
+## SciFi - Discovery
+**Query:** hard sci-fi first contact
+**Response:** 79.7s
+**Expected:** discovery
+**Results:** 10
+**Moods:** speculative_deviation, thematic_density, setting_scope
+**Rewritten:** Rigorous scientific speculation, plausible technology, alien encounters, extrate
+
+  [vector] Rendezvous with Rama by Arthur C. Clarke
+    Known for Mysteries, Hard Sci-Fi, Future.
+
+  [vector] Leviathan Wakes by James S.A. Corey
+    Known for Space Opera, Systemic/Societal Conflict, Future.
+
+  [vector] The Three-Body Problem by Cixin Liu
+    Known for War & Its Aftermath, Survival/External, Systemic/Societal Conflict.
+
+  [vector] To Sleep in a Sea of Stars by Christopher Paolini
+    Known for Space Opera, Epic, Future.
+
+  [vector] A Memory Called Empire by Arkady Martine
+    Known for Space Opera, Memory & Time, Systemic/Societal Conflict.
+
+  [vector] Hyperion by Dan Simmons
+    Known for Future, Epic, Space Opera.
+
+  [vector] We Are Legion (We Are Bob) by Dennis E. Taylor
+    Known for Future, Space Opera, Identity/Self-Discovery.
+
+  [llm] Contact by Carl Sagan
+    Known for Quests, Mysteries, Space Opera.
+
+  [llm] Story of Your Life by Ted Chiang
+    Known for Memory & Time, Existentialism, Hard Sci-Fi.
+
+  [llm] Blindsight by Peter Watts
+    Known for Hard Sci-Fi, Cosmic Horror, Psychological Horror.
+------------------------------------------------------------
+
+## SciFi - Discovery(2)
+**Query:** cyberpunk dystopian future
+**Response:** 30.95s
+**Expected:** discovery
+**Results:** 10
+**Moods:** darkness_tolerance, angst_level, violence_tolerance, thematic_density, pacing_preference, speculative_deviation, emotional_intensity
+**Rewritten:** gritty, technologically advanced, neon-drenched urban future. Explore themes of 
+
+  [vector] Count Zero by William Gibson
+    Known for Cyberpunk, Future, Anti-Hero.
+
+  [vector] Snow Crash by Neal Stephenson
+    Known for Cyberpunk, Dystopia, Future.
+
+  [vector] Altered Carbon by Richard K. Morgan
+    Known for Future, Identity/Self-Discovery, Cyberpunk.
+
+  [vector] Do Androids Dream of Electric Sheep? by Philip K. Dick
+    Known for Cyberpunk, Dystopia, Internal Conflict.
+
+  [vector] Neuromancer by William Gibson
+    Known for Cyberpunk, Dystopia, Future.
+
+  [vector] Blindsight by Peter Watts
+    Known for Hard Sci-Fi, Cosmic Horror, Psychological Horror.
+
+  [vector] A Memory Called Empire by Arkady Martine
+    Known for Space Opera, Memory & Time, Systemic/Societal Conflict.
+
+  [vector] 1984 by George Orwell
+    Known for Dystopia, Corruption of Power, Systemic/Societal Conflict.
+
+  [vector] The Murderbot Diaries: All Systems Red by Martha Wells
+    Known for Anti-Hero, Grumpy/Sunshine, Identity/Self-Discovery.
+
+  [vector] Hyperion by Dan Simmons
+    Known for Future, Epic, Space Opera.
+------------------------------------------------------------
+
+## SciFi - Discovery(3)
+**Query:** space opera political intrigue
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## SciFi - Similarity
+**Query:** like Project Hail Mary
+**Response:** 68.1s
+**Expected:** similarity
+**Results:** 10
+**Moods:** darkness_tolerance, angst_level, thematic_density, pacing_preference, prose_density, plot_vs_character, setting_scope, speculative_deviation, emotional_intensity, standalone_preference, hea_requirement
+**Rewritten:** books similar to Project Hail Mary by Andy Weir, hard science fiction, optimisti
+
+  [vector] Project Hail Mary by Andy Weir
+    Space Opera, Survival.
+
+  [vector] Leviathan Wakes by James S.A. Corey
+    Space Opera, Systemic/Societal Conflict.
+
+  [vector] We Are Legion (We Are Bob) by Dennis E. Taylor
+    Space Opera, Future.
+
+  [vector] Contact by Carl Sagan
+    Space Opera, Quests.
+
+  [vector] The Murderbot Diaries: All Systems Red by Martha Wells
+    Space Opera, Anti-Hero.
+
+  [vector] The Three-Body Problem by Cixin Liu
+    Space Opera, War & Its Aftermath.
+
+  [vector] Hyperion by Dan Simmons
+    Space Opera, Future.
+
+  [vector] Rendezvous with Rama by Arthur C. Clarke
+    Known for Hard Sci-Fi, Mysteries, Future.
+
+  [vector] Sapiens by Yuval Noah Harari
+    Semantically matches your current mood query.
+
+  [vector] Columbus Day by Craig Alanson
+    Known for Colonialism/Post-Colonialism, Military Sci-Fi, War & Its Aftermath.
+------------------------------------------------------------
+
+## Historical - Discovery
+**Query:** historical epic medieval
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Historical - Discovery(2)
+**Query:** WWI from german perspective
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Historical - Similarity
+**Query:** like All Quiet on the Western Front
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Horror - Lookup
+**Query:** Stephen King
+**Response:** 72.6s
+**Expected:** lookup
+**Results:** 2
+**Moods:** darkness_tolerance, angst_level, violence_tolerance, thematic_density, plot_vs_character, setting_scope, speculative_deviation, emotional_intensity, explicit_content_level
+**Rewritten:** Books by Stephen King, master of horror, suspense, psychological thrillers, supe
+
+  [llm] The Shining by Stephen King
+    Psychological Horror, Isolated Institution.
+
+  [llm] Duma Key by Stephen King
+    Known for Grief/Loss, Internal Conflict, Identity/Self-Discovery.
+------------------------------------------------------------
+
+## Horror - Discovery
+**Query:** cosmic horror existential dread
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Horror - Discovery(2)
+**Query:** psychological horror haunted house
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Horror - Discovery(3)
+**Query:** gothic folk horror
+**Response:** 50.91s
+**Expected:** discovery
+**Results:** 8
+**Moods:** darkness_tolerance, angst_level, violence_tolerance, thematic_density, pacing_preference, prose_density, speculative_deviation, emotional_intensity
+**Rewritten:** Atmospheric gothic folk horror literature, featuring historical dread, rural pag
+
+  [vector] Mexican Gothic by Silvia Moreno-Garcia
+    Psychological Horror, Mysteries.
+
+  [vector] Haunting Adeline by H.D. Carlton
+    Psychological Horror, Obsession.
+
+  [vector] Rebecca by Daphne du Maurier
+    Psychological Horror, Internal Conflict.
+
+  [vector] Melmoth the Wanderer by Charles Maturin
+    Psychological Horror, Corruption of Power.
+
+  [vector] The Haunting of Hill House by Shirley Jackson
+    Psychological Horror, Forced Proximity.
+
+  [vector] And Then There Were None by Agatha Christie
+    Psychological Horror, Whodunit.
+
+  [vector] Dracula by Bram Stoker
+    Known for Survival/External, Interpersonal Conflict, Obsession.
+
+  [vector] Uprooted by Naomi Novik
+    Known for Forced Proximity, Relationship Dynamics, Enemies to Lovers.
+------------------------------------------------------------
+
+## Horror - Similarity
+**Query:** more books like Mexican Gothic
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## NonFic - Discovery
+**Query:** memoir survival overcoming adversity
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## NonFic - Discovery(2)
+**Query:** investigative journalism true crime
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## NonFic - Similarity
+**Query:** like Educated
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## NonFic(2) - Discovery
+**Query:** stoic philosophy practical wisdom
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## NonFic(2) - Discovery(2)
+**Query:** history of human civilization
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## NonFic(2) - Similarity
+**Query:** like Sapiens
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Thriller - Discovery
+**Query:** psychological thriller unreliable narrator
+**Response:** 73.62s
+**Expected:** discovery
+**Results:** 9
+**Moods:** darkness_tolerance, angst_level, thematic_density, pacing_preference, narrative_linearity, plot_vs_character, emotional_intensity
+**Rewritten:** psychological thriller novel, suspense fiction, mind-bending mystery, unreliable
+
+  [vector] Sharp Objects by Gillian Flynn
+    Unreliable Narrator, Mysteries.
+
+  [vector] House of Leaves by Mark Z. Danielewski
+    Unreliable Narrator, Psychological Horror.
+
+  [vector] The House on Nazareth Hill by Ramsey Campbell
+    Unreliable Narrator, Psychological Horror.
+
+  [llm] Gone Girl by Gillian Flynn
+    Unreliable Narrator, Relationship Dynamics.
+
+  [llm] The Silent Patient by Alex Michaelides
+    Unreliable Narrator, Mysteries.
+
+  [llm] The Girl on the Train by Paula Hawkins
+    Unreliable Narrator, Mysteries.
+
+  [llm] Before I Go to Sleep by S.J. Watson
+    Unreliable Narrator, Memory & Time.
+
+  [llm] Shutter Island by Dennis Lehane
+    Unreliable Narrator, Psychological Horror.
+
+  [vector] And Then There Were None by Agatha Christie
+    Known for Forced Proximity, Locked Room Mystery, Whodunit.
+------------------------------------------------------------
+
+## Thriller - Discovery(2)
+**Query:** gothic mystery atmospheric mansion
+**Response:** 56.37s
+**Expected:** discovery
+**Results:** 10
+**Moods:** darkness_tolerance, angst_level, thematic_density, pacing_preference, prose_density, setting_scope, speculative_deviation, emotional_intensity
+**Rewritten:** Classic gothic mystery novel, atmospheric historical suspense thriller set withi
+
+  [vector] Haunting Adeline by H.D. Carlton
+    Known for Obsession, Possessive Hero, Morally Grey.
+
+  [vector] Mexican Gothic by Silvia Moreno-Garcia
+    Known for Mysteries, Isolated Institution, Psychological Horror.
+
+  [vector] Rebecca by Daphne du Maurier
+    Known for Internal Conflict, Mysteries, Psychological Horror.
+
+  [vector] The Woman in Black by Susan Hill
+    Known for Folk Horror, Psychological Horror, Isolated Institution.
+
+  [vector] The Haunting of Hill House by Shirley Jackson
+    Known for Claustrophobic, Forced Proximity, Mysteries.
+
+  [vector] Melmoth the Wanderer by Charles Maturin
+    Known for Corruption of Power, Internal Conflict, Psychological Horror.
+
+  [vector] Jonathan Strange & Mr Norrell by Susanna Clarke
+    Known for Alternate History, Historical, Relationship Dynamics.
+
+  [vector] And Then There Were None by Agatha Christie
+    Known for Whodunit, Forced Proximity, Locked Room Mystery.
+
+  [vector] Sharp Objects by Gillian Flynn
+    Known for Whodunit, Mysteries, Internal Conflict.
+
+  [vector] The Hound of the Baskervilles by Arthur Conan Doyle
+    Known for Mysteries, Whodunit, Claustrophobic.
+------------------------------------------------------------
+
+## Thriller - Discovery(3)
+**Query:** domestic thriller marriage secrets
+**Response:** 40.11s
+**Expected:** discovery
+**Results:** 9
+**Moods:** darkness_tolerance, angst_level, thematic_density, pacing_preference, plot_vs_character, setting_scope, emotional_intensity
+**Rewritten:** Domestic psychological thriller exploring marital secrets, spousal betrayal, hid
+
+  [vector] Gone Girl by Gillian Flynn
+    Known for Relationship Dynamics, Mysteries, Interpersonal Conflict.
+
+  [vector] Rebecca by Daphne du Maurier
+    Known for Internal Conflict, Mysteries, Psychological Horror.
+
+  [vector] The Girl on the Train by Paula Hawkins
+    Known for Mysteries, Whodunit, Unreliable Narrator.
+
+  [vector] Sharp Objects by Gillian Flynn
+    Known for Whodunit, Mysteries, Psychological Horror.
+
+  [vector] Before I Go to Sleep by S.J. Watson
+    Known for Memory & Time, Mysteries, Unreliable Narrator.
+
+  [vector] The Spanish Love Deception by Elena Armas
+    Known for Enemies to Lovers, Forced Proximity, Grumpy/Sunshine.
+
+  [vector] The Secret History by Donna Tartt
+    Known for Dark Academia, Internal Conflict, Mysteries.
+
+  [vector] The Silent Patient by Alex Michaelides
+    Known for Mysteries, Whodunit, Unreliable Narrator.
+
+  [vector] And Then There Were None by Agatha Christie
+    Known for Forced Proximity, Locked Room Mystery, Whodunit.
+------------------------------------------------------------
+
+## Thriller - Discovery(4)
+**Query:** true crime investigative journalism
+**ERROR:** timed out
+
+------------------------------------------------------------
+
+## Edge - Neutral
+**Query:** just give me something good
+**Response:** 31.11s
+**Expected:** discovery
+**Results:** 8
+**Rewritten:** Highly acclaimed literary fiction, popular contemporary novels, critically prais
+
+  [vector] The Goldfinch by Donna Tartt
+    Known for Obsession, Grief/Loss, Identity/Self-Discovery.
+
+  [vector] The Priory of the Orange Tree by Samantha Shannon
+    Known for Epic, Quests, War & Its Aftermath.
+
+  [vector] The Time Traveler's Wife by Audrey Niffenegger
+    Known for Relationship Dynamics, Memory & Time, Internal Conflict.
+
+  [vector] The Great Gatsby by F. Scott Fitzgerald
+    Known for Obsession, Historical, Memory & Time.
+
+  [vector] The House in the Cerulean Sea by TJ Klune
+    Known for Found Family Formation, Isolated Institution, Relationship Dynamics.
+
+  [vector] The Unnamable by Samuel Beckett
+    Known for Existentialism, Internal Conflict, Anti-Hero.
+
+  [vector] White Teeth by Zadie Smith
+    Known for Identity/Self-Discovery, Relationship Dynamics, Colonialism/Post-Colonialism.
+
+  [vector] Things Fall Apart by Chinua Achebe
+    Known for Colonialism/Post-Colonialism, Systemic/Societal Conflict, Internal Conflict.
+------------------------------------------------------------
+
+## Edge - Contradictory
+**Query:** cozy horror lighthearted
+**ERROR:** timed out
+
+------------------------------------------------------------

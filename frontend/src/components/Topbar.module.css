@@ -1,0 +1,107 @@
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 24px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Search field */
+.search {
+  flex: 1;
+  position: relative;
+}
+.searchIcon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.searchInput {
+  width: 100%;
+  padding: 8px 14px 8px 34px;
+  font-size: 13px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--transition);
+}
+.searchInput::placeholder { color: var(--text-muted); }
+.searchInput:focus { border-color: var(--border-accent); }
+
+/* Calibration pill */
+.calibPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  background: var(--accent-action-dim);
+  border: 0.5px solid var(--accent-action-border);
+  border-radius: var(--radius-full);
+  padding: 4px 11px;
+  color: var(--accent-action);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* User avatar */
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent-action-dim);
+  border: 1px solid var(--accent-action-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-action);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.avatar:hover {
+  background: var(--accent-action-border);
+}
+
+/* Sign-out menu */
+.avatarWrap { position: relative; }
+.signOutMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--surface-raised);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  min-width: 130px;
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+}
+.signOutBtn {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--danger);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--transition);
+}
+.signOutBtn:hover { background: rgba(224, 92, 92, 0.1); }

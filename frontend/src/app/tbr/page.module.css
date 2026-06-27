@@ -1,0 +1,27 @@
+.page {
+  padding: 48px 24px 80px;
+}
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.title {
+  font-size: 2rem;
+  font-family: 'Playfair Display', serif;
+  margin-bottom: 6px;
+}
+.subtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  max-width: 480px;
+  line-height: 1.6;
+}
