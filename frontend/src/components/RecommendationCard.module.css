@@ -7,8 +7,34 @@
     box-shadow: var(--shadow-md);
     box-sizing: border-box;
     opacity: 1;
-    transform: translateY(0);
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translate(0, 0) rotate(0deg);
+    transition:
+        transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.3s ease;
+    touch-action: pan-y; /* allow vertical scroll, we handle horizontal swipes */
+    user-select: none;
+}
+
+/* ── Swipe-out animations ── */
+.animateOut.swipeLeft {
+    opacity: 0;
+    transform: translateX(-120vw) rotate(-15deg);
+}
+
+.animateOut.swipeRight {
+    opacity: 0;
+    transform: translateX(120vw) rotate(15deg);
+}
+
+.animateOut.swipeUp {
+    opacity: 0;
+    transform: translateY(-120vh) rotate(0deg);
+}
+
+/* Backward-compat: generic animateOut (button click before swipe was added) */
+.animateOut:not(.swipeLeft):not(.swipeRight):not(.swipeUp) {
+    opacity: 0;
+    transform: translateX(-30px) scale(0.98);
 }
 
 .animateOut {
@@ -234,4 +260,62 @@
         width: 100%;
         text-align: center;
     }
+}
+
+/* ── Undo Toast ── */
+.undoToast {
+    position: absolute;
+    bottom: -48px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    padding: 10px 20px;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    box-shadow: var(--shadow-md);
+    z-index: 10;
+    white-space: nowrap;
+    animation: toastIn 0.25s ease;
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+.undoBtn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0;
+    font-family: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.undoBtn:hover {
+    color: var(--accent-dim);
+}
+
+/* ── Swipe Hint ── */
+.swipeHint {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0 0;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    opacity: 0.5;
+    pointer-events: none;
+    letter-spacing: 0.04em;
 }
