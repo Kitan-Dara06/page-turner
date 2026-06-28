@@ -86,3 +86,8 @@ class OrphanQueue(Base):
     )
     llm_closest_match: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     llm_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Source book — populated when enrichment writes the orphan entry.
+    # NULL for legacy entries from before this column was added.
+    source_work_uuid: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("works.work_uuid"), nullable=True
+    )
