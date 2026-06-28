@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
@@ -47,18 +47,15 @@ def sync_tracked_authors_from_reads(self):
     """
     db: Session = SessionLocal()
     try:
-        # Find all user-author pairs from LOGGED_READ events
+        # Use raw SQL to avoid ORM mapper issues with Person→Series relationship
         rows = db.execute(
-            select(
-                InteractionEvent.user_uuid,
-                Work.person_uuid,
+            text(
+                "SELECT DISTINCT ie.user_uuid, w.person_uuid "
+                "FROM interaction_events ie "
+                "JOIN works w ON w.work_uuid = ie.work_uuid "
+                "WHERE ie.event_type = 'logged_read' "
+                "AND ie.work_uuid IS NOT NULL"
             )
-            .join(Work, Work.work_uuid == InteractionEvent.work_uuid)
-            .where(
-                InteractionEvent.event_type == EventType.LOGGED_READ,
-                InteractionEvent.work_uuid.isnot(None),
-            )
-            .distinct()
         ).all()
 
         tracked = 0
