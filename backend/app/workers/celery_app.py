@@ -29,6 +29,8 @@ celery_app.conf.update(
     # Worker optimizations for Phase 1
     worker_prefetch_multiplier=1,  # Ensures fair distribution of long-running enrichment tasks
     task_acks_late=True,  # Tasks are only acknowledged after completion (prevents data loss on crash)
+    worker_max_memory_per_child=120000,  # Recycle worker after 120MB to prevent memory leaks (Heroku 512MB limit)
+    worker_max_tasks_per_child=50,  # Also recycle after 50 tasks as a safety net
 )
 
 # --- Autodiscover Tasks ---
