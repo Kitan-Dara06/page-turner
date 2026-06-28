@@ -15,9 +15,16 @@ interface AuthCtx {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (
+    email: string,
+    password: string,
+  ) => Promise<{ error: string | null }>;
+  signUp: (
+    email: string,
+    password: string,
+  ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
   /** Bearer token to attach to all API calls */
   accessToken: string | null;
 }
@@ -28,7 +35,8 @@ const Ctx = createContext<AuthCtx>({
   loading: true,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
-  signOut: async () => { },
+  signOut: async () => {},
+  resetPassword: async () => ({ error: null }),
   accessToken: null,
 });
 
@@ -56,7 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     return { error: error?.message ?? null };
   }, []);
 
@@ -70,6 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    return { error: error?.message ?? null };
+  }, []);
+
   return (
     <Ctx.Provider
       value={{
@@ -79,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signUp,
         signOut,
+        resetPassword,
         accessToken: session?.access_token ?? null,
       }}
     >

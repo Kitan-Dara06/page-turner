@@ -268,3 +268,16 @@ export interface TimelineEvent {
 export interface TimelineResponse {
   timeline: TimelineEvent[];
 }
+
+// ── Reading Rhythm ────────────────────────────────────────────
+
+export interface RhythmInsight {
+  icon: string;
+  headline: string;
+  detail: string;
+}
+
+export interface RhythmResponse {
+  insights: RhythmInsight[];
+  message?: string;
+}

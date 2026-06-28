@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { profile, feedback } from "@/lib/api";
-import type { CalibrationData, TimelineEvent, WorkResponse } from "@/lib/types";
+import type {
+  CalibrationData,
+  TimelineEvent,
+  WorkResponse,
+  RhythmInsight,
+} from "@/lib/types";
 import BookCover from "@/components/BookCover";
 import styles from "./page.module.css";
 
@@ -36,12 +41,17 @@ export default function ProfilePage() {
   const [phase, setPhase] = useState<ReaderPhase | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  
+
   // Calibration & Timeline additions
   const [calibration, setCalibration] = useState<CalibrationData | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
-  const [activeTab, setActiveTab] = useState<"dimensions" | "timeline">("dimensions");
+  const [activeTab, setActiveTab] = useState<
+    "dimensions" | "timeline" | "rhythm"
+  >("dimensions");
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  const [rhythmInsights, setRhythmInsights] = useState<RhythmInsight[]>([]);
+  const [rhythmMessage, setRhythmMessage] = useState<string | null>(null);
+  const [rhythmLoading, setRhythmLoading] = useState(false);
 
   useEffect(() => {
     profile
@@ -59,6 +69,15 @@ export default function ProfilePage() {
       .getTimeline()
       .then((data) => {
         setTimeline(data.timeline || []);
+      })
+      .catch(() => {});
+
+    // Lazy-load rhythm data when user switches to that tab
+    profile
+      .getRhythm()
+      .then((data) => {
+        if (data.message) setRhythmMessage(data.message);
+        setRhythmInsights(data.insights || []);
       })
       .catch(() => {});
   }, []);
@@ -145,19 +164,28 @@ export default function ProfilePage() {
             <div className={styles.calibrationContent}>
               <div className={styles.calibrationTextHeader}>
                 <h3>Calibration Phase Active</h3>
-                <span>{calibration.total_interactions} / 20 meaningful interactions logged</span>
+                <span>
+                  {calibration.total_interactions} / 20 meaningful interactions
+                  logged
+                </span>
               </div>
               <p className={styles.calibrationDesc}>
-                PageTurner is calibrating its recommendation engine to match your cravings. The training wheels come off once you reach 20 interactions or after your 30-day window.
+                PageTurner is calibrating its recommendation engine to match
+                your cravings. The training wheels come off once you reach 20
+                interactions or after your 30-day window.
               </p>
               <div className={styles.calibrationProgressBg}>
                 <div
                   className={styles.calibrationProgressFill}
-                  style={{ width: `${Math.min(100, (calibration.total_interactions / 20) * 100)}%` }}
+                  style={{
+                    width: `${Math.min(100, (calibration.total_interactions / 20) * 100)}%`,
+                  }}
                 />
               </div>
               <div className={styles.calibrationMeta}>
-                <span>{calibration.interactions_remaining} interactions remaining</span>
+                <span>
+                  {calibration.interactions_remaining} interactions remaining
+                </span>
                 <span>{calibration.days_remaining} days remaining</span>
               </div>
             </div>
@@ -206,6 +234,12 @@ export default function ProfilePage() {
           >
             📜 Activity Timeline ({timeline.length})
           </button>
+          <button
+            className={`${styles.tabBtn} ${activeTab === "rhythm" ? styles.activeTabBtn : ""}`}
+            onClick={() => setActiveTab("rhythm")}
+          >
+            ⏱ Reading Rhythm
+          </button>
         </div>
 
         {/* Tab 1: Dimensions Grid */}
@@ -215,7 +249,9 @@ export default function ProfilePage() {
               <div key={dim.key} className={styles.card}>
                 <div className={styles.cardHeader}>
                   <h3 className={styles.dimName}>{dim.name}</h3>
-                  <span className={styles.dimValue}>{dim.value.toFixed(2)}</span>
+                  <span className={styles.dimValue}>
+                    {dim.value.toFixed(2)}
+                  </span>
                 </div>
                 <p className={styles.dimQuestion}>{dim.question}</p>
 
@@ -242,13 +278,16 @@ export default function ProfilePage() {
           <div className={styles.timelineContainer}>
             {timeline.length === 0 ? (
               <div className={styles.emptyTimeline}>
-                No recorded interactions yet. Devour books, save cravings, or search vibes to build history!
+                No recorded interactions yet. Devour books, save cravings, or
+                search vibes to build history!
               </div>
             ) : (
               <div className={styles.timelineList}>
                 {timeline.map((event) => {
                   const isExpanded = expandedEvents.has(event.event_uuid);
-                  const displayDate = new Date(event.event_timestamp).toLocaleString(undefined, {
+                  const displayDate = new Date(
+                    event.event_timestamp,
+                  ).toLocaleString(undefined, {
                     month: "short",
                     day: "numeric",
                     hour: "2-digit",
@@ -258,7 +297,9 @@ export default function ProfilePage() {
                   return (
                     <div key={event.event_uuid} className={styles.timelineItem}>
                       <div className={styles.timelineLeft}>
-                        <span className={`${styles.eventBadge} ${getEventBadgeClass(event.event_type)}`}>
+                        <span
+                          className={`${styles.eventBadge} ${getEventBadgeClass(event.event_type)}`}
+                        >
                           {getEventLabel(event.event_type)}
                         </span>
                         <span className={styles.eventTime}>{displayDate}</span>
@@ -269,11 +310,15 @@ export default function ProfilePage() {
                           <div className={styles.eventDescription}>
                             {event.event_type === "query" ? (
                               <span>
-                                Searched for <span className={styles.queryHighlight}>"{event.query_text}"</span>
+                                Searched for{" "}
+                                <span className={styles.queryHighlight}>
+                                  "{event.query_text}"
+                                </span>
                               </span>
                             ) : event.work ? (
                               <span>
-                                <strong>{event.work.title}</strong> by {event.work.author?.canonical_name || "Unknown"}
+                                <strong>{event.work.title}</strong> by{" "}
+                                {event.work.author?.canonical_name || "Unknown"}
                               </span>
                             ) : (
                               <span>Generic event: {event.event_type}</span>
@@ -282,7 +327,10 @@ export default function ProfilePage() {
 
                           {event.work && (
                             <div className={styles.coverThumbnail}>
-                              <BookCover work={event.work} className={styles.thumbImage} />
+                              <BookCover
+                                work={event.work}
+                                className={styles.thumbImage}
+                              />
                             </div>
                           )}
                         </div>
@@ -293,7 +341,9 @@ export default function ProfilePage() {
                               className={styles.debugBtn}
                               onClick={() => toggleExpand(event.event_uuid)}
                             >
-                              {isExpanded ? "Hide Engine State ▲" : "Explain/Debug Engine State ▼"}
+                              {isExpanded
+                                ? "Hide Engine State ▲"
+                                : "Explain/Debug Engine State ▼"}
                             </button>
                           </div>
                         )}
@@ -302,26 +352,38 @@ export default function ProfilePage() {
                         {isExpanded && event.tower1_snapshot && (
                           <div className={styles.debugPanel}>
                             <div className={styles.debugTitle}>
-                              🧠 Taste Profile snapshot at moment of interaction:
+                              🧠 Taste Profile snapshot at moment of
+                              interaction:
                             </div>
                             <div className={styles.debugGrid}>
-                              {Object.entries(event.tower1_snapshot).map(([key, val]) => {
-                                const numericVal = typeof val === "number" ? val : parseFloat(val as string);
-                                if (isNaN(numericVal)) return null;
+                              {Object.entries(event.tower1_snapshot).map(
+                                ([key, val]) => {
+                                  const numericVal =
+                                    typeof val === "number"
+                                      ? val
+                                      : parseFloat(val as string);
+                                  if (isNaN(numericVal)) return null;
 
-                                return (
-                                  <div key={key} className={styles.debugRow}>
-                                    <span className={styles.debugKey}>{KEY_LABELS[key] || key}:</span>
-                                    <div className={styles.debugBarBg}>
-                                      <div
-                                        className={styles.debugBarFill}
-                                        style={{ width: `${numericVal * 100}%` }}
-                                      />
+                                  return (
+                                    <div key={key} className={styles.debugRow}>
+                                      <span className={styles.debugKey}>
+                                        {KEY_LABELS[key] || key}:
+                                      </span>
+                                      <div className={styles.debugBarBg}>
+                                        <div
+                                          className={styles.debugBarFill}
+                                          style={{
+                                            width: `${numericVal * 100}%`,
+                                          }}
+                                        />
+                                      </div>
+                                      <span className={styles.debugValue}>
+                                        {numericVal.toFixed(2)}
+                                      </span>
                                     </div>
-                                    <span className={styles.debugValue}>{numericVal.toFixed(2)}</span>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                },
+                              )}
                             </div>
                           </div>
                         )}
@@ -329,6 +391,34 @@ export default function ProfilePage() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: Reading Rhythm */}
+        {activeTab === "rhythm" && (
+          <div className={styles.rhythmContainer}>
+            {rhythmMessage ? (
+              <div className={styles.rhythmEmpty}>{rhythmMessage}</div>
+            ) : rhythmInsights.length === 0 ? (
+              <div className={styles.rhythmEmpty}>
+                No rhythm patterns surfaced yet. Keep reading — your cadence
+                will emerge.
+              </div>
+            ) : (
+              <div className={styles.rhythmGrid}>
+                {rhythmInsights.map((insight, i) => (
+                  <div key={i} className={styles.rhythmCard}>
+                    <span className={styles.rhythmIcon}>{insight.icon}</span>
+                    <div className={styles.rhythmBody}>
+                      <h4 className={styles.rhythmHeadline}>
+                        {insight.headline}
+                      </h4>
+                      <p className={styles.rhythmDetail}>{insight.detail}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

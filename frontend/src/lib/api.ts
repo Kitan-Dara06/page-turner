@@ -22,6 +22,7 @@ import {
   TropeItem,
   TropeDetailResponse,
   TimelineResponse,
+  RhythmResponse,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -235,5 +236,10 @@ export const profile = {
     return apiFetch<ProfileResponse>(
       `/api/v1/profile/?content_mode=${contentMode}`,
     );
+  },
+
+  /** Returns temporal reading-pattern insights. */
+  getRhythm(): Promise<RhythmResponse> {
+    return apiFetch<RhythmResponse>("/api/v1/profile/rhythm");
   },
 };

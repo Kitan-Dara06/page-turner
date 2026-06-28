@@ -1,0 +1,139 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 40px 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 380px;
+}
+
+.logo {
+  font-family: "Playfair Display", serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  margin-bottom: 40px;
+}
+.logo span {
+  color: var(--accent-action);
+}
+
+.title {
+  font-family: "Playfair Display", serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+  line-height: 1.6;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 10px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 13px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color var(--transition);
+  outline: none;
+}
+.input::placeholder { color: var(--text-muted); }
+.input:focus {
+  border-color: var(--accent-action-border);
+}
+
+.error {
+  font-size: 12px;
+  color: var(--danger);
+  padding: 8px 12px;
+  background: rgba(224, 92, 92, 0.07);
+  border-radius: var(--radius-sm);
+  border: 0.5px solid rgba(224, 92, 92, 0.2);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.submit {
+  margin-top: 16px;
+  width: 100%;
+  padding: 11px;
+  font-size: 13px;
+  font-weight: 500;
+  justify-content: center;
+  background: var(--accent-action);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.submit:hover:not(:disabled) { opacity: 0.88; }
+.submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.successBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.successIcon {
+  width: 48px;
+  height: 48px;
+  background: rgba(76, 175, 130, 0.1);
+  border: 0.5px solid rgba(76, 175, 130, 0.3);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--success);
+  font-size: 1.3rem;
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 60px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
