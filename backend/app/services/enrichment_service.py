@@ -301,14 +301,11 @@ Output STRICT JSON with these keys:
    pacing_preference, prose_density, narrative_linearity, plot_vs_character,
    setting_scope, speculative_deviation, world_building_appetite, emotional_intensity,
    standalone_preference.
-3. "orphan_candidates": list of raw tag strings that describe a distinct trope, subgenre,
-   or narrative device not already in the taxonomy. Constraints:
-   - MAX 5 orphan candidates per book. Be selective.
-   - MUST be a genre/trope term (e.g. "omegaverse", "grimdark"), NOT an emotional valence
-     ("sad", "emotional"), NOT a review quote ("furiously funny"), NOT a plot summary.
-   - 2-4 words max. NOT a phrase or sentence.
-   - If unsure whether it qualifies as a trope, do NOT include it.
-   - Leave empty if nothing qualifies.
+3. "orphan_candidates": list of dicts with keys "tag" (str) and "quality" (one of:
+   "trope", "mood", "review"). A trope is a distinct genre device or subgenre not in
+   the taxonomy (e.g. "omegaverse", "grimdark"). A mood is an emotional descriptor
+   (e.g. "melancholy", "whimsical"). A review is a phrase or quote pulled from the
+   description text (e.g. "darkly funny"). MAX 5 total. Leave empty if none qualify.
 4. "is_narrative": boolean. true if this work tells a story with characters and plot —
    novels, short story collections, graphic novels, AND narrative non-fiction
    (memoir, true crime narrative, narrative nonfiction, immersive journalism).
@@ -443,66 +440,43 @@ def _run_llm_extraction(
         cache.is_narrative = raw_narrative
     # Non-bool response (e.g. string, null) → leave the current value untouched.
 
-    # Write orphan candidates (atomic upsert) with hallucination guard
+    # Write orphan candidates (atomic upsert)
+    # Each tag is labelled by quality so resolve_orphans can triage:
+    #   "trope"  = legitimate unmapped trope/subgenre — promote on resolution
+    #   "mood"   = emotional descriptor — useful as alias, not a trope itself
+    #   "review" = review-speak / sentence fragment — likely noise, deprioritise
     from sqlalchemy import text as sa_text
 
-    _GENERIC_EMOTIONS = {
-        "emotional",
-        "sad",
-        "happy",
-        "angry",
-        "scary",
-        "funny",
-        "dark",
-        "light",
-        "deep",
-        "slow",
-        "fast",
-        "beautiful",
-        "ugly",
-        "boring",
-        "exciting",
-        "tense",
-        "calm",
-        "violent",
-        "peaceful",
-        "sweet",
-        "bitter",
-        "warm",
-        "cold",
-        "heavy",
-        "romantic",
-        "tragic",
-        "comic",
-    }
-
     for tag in response.get("orphan_candidates", []):
-        clean = tag.lower().strip()
+        # Support dict format {"tag":..., "quality":...} and legacy bare string
+        if isinstance(tag, dict):
+            clean = tag.get("tag", "").lower().strip()
+            quality = tag.get("quality", "trope")
+        else:
+            clean = str(tag).lower().strip()
+            quality = "trope"
 
-        # Reject generic emotional valences — these aren't tropes
-        if clean in _GENERIC_EMOTIONS:
-            continue
-
-        # Reject phrases that look like review quotes (>5 words or contains quotes)
-        word_count = len(clean.split())
-        if word_count > 5:
-            continue
-
-        # Reject anything that is clearly a sentence fragment, not a tag
-        if any(clean.startswith(w) for w in ("a ", "the ", "an ", "this ", "that ")):
-            continue
-
-        # Reject empty or single-character tags
         if len(clean) < 2:
             continue
+
+        # Heuristic: sentence-like tags get downgraded to "review" quality
+        word_count = len(clean.split())
+        if word_count > 6 or any(
+            clean.startswith(w) for w in ("a ", "the ", "an ", "this ", "that ")
+        ):
+            quality = "review"
 
         db.execute(
             sa_text(
                 "INSERT INTO orphan_queue (tag_text, source, frequency_count, first_seen, last_seen, source_work_uuid) "
-                "VALUES (:tag, 'llm_extraction', 1, now(), now(), :work_uuid) "
+                "VALUES (:tag, :source, 1, now(), now(), :work_uuid) "
                 "ON CONFLICT (tag_text) DO UPDATE SET frequency_count = orphan_queue.frequency_count + 1, last_seen = now(), source_work_uuid = COALESCE(orphan_queue.source_work_uuid, :work_uuid)"
             ),
-            {"tag": clean, "work_uuid": work.work_uuid},
+            {
+                "tag": clean,
+                "source": f"llm_extraction[{quality}]",
+                "work_uuid": work.work_uuid,
+            },
         )
 
     # Store Tower 1 snapshot
