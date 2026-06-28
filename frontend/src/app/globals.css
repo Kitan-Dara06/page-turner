@@ -19,7 +19,7 @@
     --accent-glow-lg: rgba(224, 122, 95, 0.06);
 
     /* action / CTA accent (vibrant violet/lavender) */
-    --accent-action: #7C3AED;
+    --accent-action: #7c3aed;
     --accent-action-dim: rgba(124, 58, 237, 0.08);
     --accent-action-border: rgba(124, 58, 237, 0.2);
 
@@ -34,13 +34,13 @@
     --info: #3b82f6;
 
     /* book tag colours (vibrant, premium tags) */
-    --tag-dark-bg:    rgba(124, 58, 237, 0.08);
+    --tag-dark-bg: rgba(124, 58, 237, 0.08);
     --tag-dark-color: #6d28d9;
     --tag-dark-border: rgba(124, 58, 237, 0.2);
-    --tag-trauma-bg:    rgba(239, 68, 68, 0.08);
+    --tag-trauma-bg: rgba(239, 68, 68, 0.08);
     --tag-trauma-color: #b91c1c;
     --tag-trauma-border: rgba(239, 68, 68, 0.2);
-    --tag-slow-bg:    rgba(16, 185, 129, 0.08);
+    --tag-slow-bg: rgba(16, 185, 129, 0.08);
     --tag-slow-color: #047857;
     --tag-slow-border: rgba(16, 185, 129, 0.25);
 
@@ -586,4 +586,52 @@ img {
 }
 ::-webkit-scrollbar-thumb:hover {
     background: var(--surface-hover);
+}
+
+@media (max-width: 768px) {
+    html {
+        font-size: 15px;
+    }
+    .container {
+        padding: 0 16px;
+    }
+    .card {
+        padding: 16px;
+        border-radius: var(--radius-lg);
+    }
+    h1 {
+        font-size: 1.6rem;
+    }
+    h2 {
+        font-size: 1.35rem;
+    }
+    h3 {
+        font-size: 1.15rem;
+    }
+    .empty-state {
+        padding: 32px 16px;
+    }
+    .nav-links {
+        gap: 12px;
+    }
+    .nav-links a {
+        font-size: 0.8rem;
+    }
+    .badge {
+        font-size: 0.68rem;
+        padding: 2px 8px;
+    }
+    .mood-pill {
+        font-size: 0.72rem;
+        padding: 3px 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    html {
+        font-size: 14px;
+    }
+    .container {
+        padding: 0 12px;
+    }
 }
