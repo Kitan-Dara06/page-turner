@@ -209,3 +209,156 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
         logger.exception("Release check failed")
     finally:
         db.close()
+
+
+@celery_app.task(bind=True, max_retries=2, acks_late=True)
+def seed_niche_genre_from_books(self, work_uuids: list[str]):
+    """
+    FR-SEED-01: When a user seeds with books from a niche genre, detect if the
+    genre is under-represented in our DB and populate 10+ similar books via Google
+    Books + enrichment pipeline.
+    """
+    db: Session = SessionLocal()
+    try:
+        from sqlalchemy import func as sa_func
+
+        from app.models.authors import Person
+        from app.models.books import Edition
+        from app.models.tropes import BookTrope, Trope
+
+        trope_counter: dict[str, int] = {}
+        for wuid in work_uuids:
+            tropes = (
+                db.execute(
+                    select(Trope.canonical_name)
+                    .join(BookTrope, BookTrope.trope_uuid == Trope.trope_uuid)
+                    .where(BookTrope.work_uuid == wuid)
+                    .where(Trope.is_root_hub == False)
+                )
+                .scalars()
+                .all()
+            )
+            for t in tropes:
+                trope_counter[t] = trope_counter.get(t, 0) + 1
+
+        if not trope_counter:
+            logger.info("Seed books have no tropes yet — enrichment may be pending.")
+            return
+
+        dominant = max(trope_counter, key=trope_counter.get)
+        existing_count = (
+            db.execute(
+                select(sa_func.count(BookTrope.work_uuid))
+                .join(Trope, Trope.trope_uuid == BookTrope.trope_uuid)
+                .where(Trope.canonical_name == dominant)
+            ).scalar()
+            or 0
+        )
+
+        if existing_count >= 10:
+            logger.info(f"'{dominant}' has {existing_count} books — sufficient.")
+            return
+
+        needed = 10 - existing_count
+        logger.info(
+            f"'{dominant}' only has {existing_count} books. Searching for {needed} more..."
+        )
+
+        import httpx
+
+        from app.config import settings
+
+        params = {
+            "q": dominant.replace("_", " "),
+            "key": settings.GOOGLE_BOOKS_API_KEY,
+            "maxResults": 15,
+        }
+        try:
+            with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+                resp = client.get(
+                    "https://www.googleapis.com/books/v1/volumes", params=params
+                )
+                resp.raise_for_status()
+                results = resp.json().get("items", [])
+        except Exception:
+            logger.warning(f"Google Books search failed for: {dominant}")
+            return
+
+        created = 0
+        for item in results:
+            if created >= needed:
+                break
+            vol = item.get("volumeInfo", {})
+            title = vol.get("title", "")
+            if not title:
+                continue
+            authors = vol.get("authors", [])
+            author_name = authors[0] if authors else "Unknown"
+
+            existing = (
+                db.execute(
+                    select(Work).where(sa_func.lower(Work.title) == title.lower())
+                )
+                .scalars()
+                .all()
+            )
+            if any(
+                w.author and w.author.canonical_name.lower() == author_name.lower()
+                for w in existing
+            ):
+                continue
+
+            person = db.execute(
+                select(Person).where(
+                    sa_func.lower(Person.canonical_name) == author_name.lower()
+                )
+            ).scalar_one_or_none()
+            if not person:
+                person = Person(canonical_name=author_name)
+                db.add(person)
+                db.flush()
+
+            work = Work(
+                title=title, person_uuid=person.person_uuid, enrichment_status="pending"
+            )
+            db.add(work)
+            db.flush()
+
+            isbns = [
+                i.get("identifier")
+                for i in vol.get("industryIdentifiers", [])
+                if i.get("type") in ("ISBN_13", "ISBN_10")
+            ]
+            if isbns:
+                db.add(
+                    Edition(work_uuid=work.work_uuid, isbn=isbns[0], format="unknown")
+                )
+
+            created += 1
+            logger.info(f"  Seeded: {title} by {author_name}")
+
+        if created > 0:
+            db.commit()
+            logger.info(
+                f"Seeded {created} books for '{dominant}' (had {existing_count})"
+            )
+            from app.workers.enrichment_tasks import enrich_single_work
+
+            for w in (
+                db.execute(
+                    select(Work)
+                    .where(Work.enrichment_status == "pending")
+                    .limit(created)
+                )
+                .scalars()
+                .all()
+            ):
+                enrich_single_work.delay(str(w.work_uuid))
+        else:
+            db.rollback()
+
+    except Exception:
+        db.rollback()
+        logger.exception("Niche population failed")
+    finally:
+        db.close()
