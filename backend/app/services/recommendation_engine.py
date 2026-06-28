@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.integrations import google_books, llm, openlibrary, qdrant, tavily
+from app.logging import log_entry_exit
 from app.models.authors import Person
 from app.models.books import Work
 from app.models.enrichment import EnrichmentCache
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
+@log_entry_exit()
 def generate_recommendations(
     db: Session, user_uuid: str, raw_query: str, session_id: str
 ) -> RecommendationResponse:

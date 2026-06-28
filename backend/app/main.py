@@ -21,10 +21,10 @@ from app.api import (
 )
 from app.config import settings
 from app.integrations import qdrant
+from app.logging import log_entry_exit, setup_logging
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+# Structured JSON logging (replaces standard logging.basicConfig)
+_log_worker = setup_logging()
 logger = logging.getLogger(__name__)
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
@@ -51,6 +51,12 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize Qdrant: {e}")
 
     yield
+
+    # Shutdown MongoDB log worker
+    from app.logging import _log_worker
+
+    if _log_worker:
+        _log_worker.stop()
 
     logger.info("Shutting down PageTurner API...")
 

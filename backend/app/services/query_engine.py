@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.integrations import llm
 from app.integrations.llm import LLM_UNAVAILABLE
+from app.logging import log_entry_exit
 from app.models.events import EventType, InteractionEvent
 from app.models.tbr import TBREntry, TBRStatus
 from app.models.users import UserProfile
@@ -184,6 +185,7 @@ def _build_context_block(db: Session, user_uuid: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+@log_entry_exit()
 def process_reader_query(
     db: Session, user_uuid: str, raw_query: str
 ) -> Tuple[str, Dict[str, float], List[str], Optional[str], str]:

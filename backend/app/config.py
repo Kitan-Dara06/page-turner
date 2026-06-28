@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # Space-separated allowed origins. Add staging/prod domains when deploying.
     FRONTEND_ORIGINS: str = "http://localhost:3000 https://page-turner-seven.vercel.app"
 
+    # ── Monitoring / Logging ────────────────────────────────────────
+    # MongoDB connection string for structured logging (optional).
+    # Leave blank to log to stdout as JSON only.
+    MONGO_URI: Optional[str] = None
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
