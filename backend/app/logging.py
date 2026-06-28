@@ -102,7 +102,11 @@ class LogWorker:
         if self._client is None:
             from pymongo import MongoClient
 
-            self._client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=3000)
+            self._client = MongoClient(
+                self.mongo_uri,
+                serverSelectionTimeoutMS=3000,
+                tlsAllowInvalidCertificates=True,
+            )
         return self._client
 
     def _run(self):

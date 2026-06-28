@@ -69,4 +69,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.enrichment_tasks.sweep_stuck_partials",
         "schedule": 300.0,  # every 5 minutes
     },
+    # FR-AT-01: Backfills TrackedAuthor table from read history (runs daily)
+    "daily_tracked_author_sync": {
+        "task": "app.workers.author_alert_tasks.sync_tracked_authors_from_reads",
+        "schedule": crontab(hour=0, minute=30),
+    },
 }

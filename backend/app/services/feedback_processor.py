@@ -9,6 +9,7 @@ from app.integrations import qdrant
 from app.models.books import Work
 from app.models.enrichment import EnrichmentCache
 from app.models.events import AbandonmentStage, EventType, InteractionEvent
+from app.models.tracked_authors import TrackedAuthor
 from app.models.users import UserProfile
 from app.services import user_intelligence
 
@@ -94,6 +95,10 @@ def process_interaction(
             signal_weight=signal_weight,
             work_uuid=work_uuid,
         )
+
+    # 5. Auto-track author on LOGGED_READ / REREAD (FR-AT-01)
+    if event_type in (EventType.LOGGED_READ, EventType.REREAD) and work_uuid:
+        _auto_track_author(db, user_uuid, work_uuid)
 
     db.commit()
     return event
@@ -248,3 +253,32 @@ def _extract_tower1_state(profile: UserProfile) -> Dict[str, Any]:
         if column.name not in ["user_uuid", "tower2_embedding", "updated_at"]
         and getattr(profile, column.name) is not None
     }
+
+
+def _auto_track_author(db: Session, user_uuid: str, work_uuid: str):
+    """
+    When a user finishes a book, automatically add the author to their
+    tracked authors list. Idempotent — does nothing if already tracked.
+    """
+    from sqlalchemy import select as _select
+
+    work = db.execute(
+        _select(Work).where(Work.work_uuid == work_uuid)
+    ).scalar_one_or_none()
+    if not work:
+        return
+
+    existing = db.execute(
+        _select(TrackedAuthor).where(
+            TrackedAuthor.user_uuid == user_uuid,
+            TrackedAuthor.person_uuid == work.person_uuid,
+        )
+    ).scalar_one_or_none()
+    if not existing:
+        db.add(
+            TrackedAuthor(
+                user_uuid=user_uuid,
+                person_uuid=work.person_uuid,
+            )
+        )
+        logger.info(f"Auto-tracked author {work.person_uuid} for user {user_uuid}")
