@@ -25,3 +25,6 @@ docker-compose.*
 # Git
 *.swp
 *.swo
+prod_dump.sql
+prod_dump.sql.save
+backend/scripts/test_logging.py
