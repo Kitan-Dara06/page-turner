@@ -18,32 +18,35 @@ def get_undismissed_releases(
     user_uuid: str = Depends(get_current_user_uuid),
 ):
     """FR-AT-02: Returns undismissed author_new_release events for the current user."""
+    # Filter undismissed in SQL — don't let the 20-row limit hide older alerts
     events = (
         db.execute(
             select(InteractionEvent)
             .where(
                 InteractionEvent.user_uuid == user_uuid,
                 InteractionEvent.event_type == EventType.AUTHOR_NEW_RELEASE,
+                InteractionEvent.mood_tags["dismissed"].as_boolean() == False,
             )
             .order_by(InteractionEvent.event_timestamp.desc())
-            .limit(20)
+            .limit(50)
         )
         .scalars()
         .all()
     )
-    undismissed = [e for e in events if not (e.mood_tags or {}).get("dismissed", False)]
     return {
-        "count": len(undismissed),
+        "count": len(events),
         "releases": [
             {
                 "event_uuid": str(e.event_uuid),
                 "title": (e.mood_tags or {}).get("title", "Unknown"),
                 "author_name": (e.mood_tags or {}).get("author_name", "Unknown"),
-                "publication_date": str((e.mood_tags or {}).get("publication_date", "")),
+                "publication_date": str(
+                    (e.mood_tags or {}).get("publication_date", "")
+                ),
                 "work_uuid": str(e.work_uuid) if e.work_uuid else None,
                 "dismissed": (e.mood_tags or {}).get("dismissed", False),
             }
-            for e in undismissed
+            for e in events
         ],
     }
 

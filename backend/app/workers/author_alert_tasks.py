@@ -15,8 +15,9 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-# Only check releases published within this many days
-RELEASE_WINDOW_DAYS = 30
+# Check for releases within this window — past AND future
+RELEASE_WINDOW_PAST_DAYS = 90
+RELEASE_WINDOW_FUTURE_DAYS = 90
 
 
 def _auto_track_for_user(db: Session, user_uuid, person_uuid):
@@ -104,7 +105,12 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
             return
 
         new_releases = 0
-        cutoff = datetime.now(timezone.utc) - timedelta(days=RELEASE_WINDOW_DAYS)
+        past_cutoff = datetime.now(timezone.utc) - timedelta(
+            days=RELEASE_WINDOW_PAST_DAYS
+        )
+        future_cutoff = datetime.now(timezone.utc) + timedelta(
+            days=RELEASE_WINDOW_FUTURE_DAYS
+        )
 
         for ta in tracked_rows:
             person = db.execute(
@@ -148,10 +154,11 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
                 except (ValueError, TypeError):
                     continue
 
-                if pub < cutoff:
+                if pub < past_cutoff or pub > future_cutoff:
                     continue
 
-                # Check if already notified for this user+title+author
+                # Only skip if an UNDISMISSED notification already exists for this release.
+                # If the user dismissed the old one, create a fresh event so it re-surfaces.
                 already_notified = db.execute(
                     select(InteractionEvent.event_uuid).where(
                         InteractionEvent.user_uuid == ta.user_uuid,
@@ -159,6 +166,7 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
                         InteractionEvent.mood_tags["title"].as_string() == title,
                         InteractionEvent.mood_tags["author_name"].as_string()
                         == author_name,
+                        InteractionEvent.mood_tags["dismissed"].as_boolean() == False,
                     )
                 ).scalar_one_or_none()
 
