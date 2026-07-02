@@ -65,6 +65,9 @@ class RecommendationResponse(BaseModel):
     content_mode: str = (
         "fiction"  # "fiction" | "nonfiction" — drives label set selection
     )
+    unmatched_tropes: List[
+        str
+    ] = []  # tropes the LLM extracted but aren't in taxonomy yet
 
 
 class TBRDropCandidate(BaseModel):

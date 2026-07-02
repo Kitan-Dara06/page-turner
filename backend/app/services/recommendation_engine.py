@@ -57,16 +57,12 @@ def generate_recommendations(
     user_intelligence.initialize_user_profile(db, user_uuid)
 
     # ── Parallel: Series detection + Query engine ──
-    # These are independent LLM calls. Running them concurrently
-    # cuts pipeline latency from ~13s to ~8s.
     series_ctx = None
     _series_tropes = None
     query_type_from_series = None
-    expanded_query = raw_query
-    mood_tags_delta = {}
-    query_trope_names: List[str] = []
-    anchor_author: Optional[str] = None
-    query_intent = "discovery"
+
+    # QueryIntent — structured 4-bucket classification
+    qintent: query_engine.QueryIntent = query_engine.QueryIntent()
 
     def _run_series():
         return resolve_series_from_query(db, raw_query)
@@ -78,7 +74,6 @@ def generate_recommendations(
         future_series = pool.submit(_run_series)
         future_query = pool.submit(_run_query)
 
-        # Process series result (usually finishes first)
         series_ctx = future_series.result()
         if series_ctx:
             logger.info(
@@ -90,20 +85,23 @@ def generate_recommendations(
                 logger.info(f"Series aggregated tropes: {_series_tropes}")
             query_type_from_series = "similarity"
 
-        # Process query result
-        (
-            expanded_query,
-            mood_tags_delta,
-            query_trope_names,
-            anchor_author,
-            query_intent,
-        ) = future_query.result()
+        qintent = future_query.result()
 
     # Intent priority: series detection > query engine intent
-    query_type = query_type_from_series or query_intent
+    query_type = query_type_from_series or qintent.intent
     logger.info(
         f"Query intent: {query_type} (series_override={bool(query_type_from_series)})"
     )
+
+    # Extract from QueryIntent
+    expanded_query = qintent.expanded_query or raw_query
+    vibe = qintent.vibe or expanded_query
+    query_trope_names = list(qintent.query_tropes)
+    unmatched_tropes = list(qintent.unmatched_tropes)
+    anchor_author = qintent.anchor_author
+    constraints = qintent.constraints
+    prefs_atmospheric = dict(qintent.preferences_atmospheric)
+    prefs_boundary = dict(qintent.preferences_boundary)
 
     # Merge series tropes into LLM-extracted tropes (series takes priority)
     if _series_tropes:
@@ -320,28 +318,103 @@ def generate_recommendations(
     if query_type == "lookup":
         _handle_lookup_query(db, expanded_query, candidates, seen, anchor_author)
     elif query_type == "similarity":
-        _handle_similarity_query(db, expanded_query, candidates, seen)
+        _handle_similarity_query(
+            db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+        )
     elif query_type == "departure":
-        # User wants something DIFFERENT from the reference point.
-        # Route to discovery — the series tropes act as negative signal.
-        # If a series was resolved, mark its aggregated tropes for downranking.
         if series_ctx and series_ctx.aggregated_tropes:
             _departure_tropes = [name for name, _ in series_ctx.aggregated_tropes[:6]]
             logger.info(f"Departure: downranking tropes {_departure_tropes}")
-            # Map departure tropes to negative IDF weights for reranker
             _departure_idf = {
                 t: -idf_weights.get(t, 0.5) * 2 for t in _departure_tropes
             }
             idf_weights = {**idf_weights, **_departure_idf}
-        _handle_discovery_query(db, expanded_query, candidates, seen)
+        _handle_discovery_query(
+            db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+        )
     else:
-        _handle_discovery_query(db, expanded_query, candidates, seen)
+        _handle_discovery_query(
+            db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+        )
 
-    # Batch-load book trope names for all candidates (single DB round-trip)
-    _enrich_candidate_tropes(db, candidates)
+    # ── Cascade: in-memory filter relaxation if pool is empty ──
+    # Filters are applied in-memory — Qdrant returned up to 30 candidates.
+    # Relaxation is instant (no additional API calls).
+    # Order: tropes relax first, then structural constraints.
+    # Exclusionary constraints (no_ya) NEVER relax.
+    cascade_stage = 0
 
-    # Stamp is_interested for books the user has soft-flagged (single DB round-trip)
-    _stamp_interested_candidates(db, user_uuid, candidates)
+    def _apply_constraints(c, cons):
+        """Apply constraint gates to a single candidate. Returns True if passes."""
+        from app.models.series import SeriesWork
+
+        w = c.raw_record
+        if cons.standalone_only or cons.no_series:
+            in_series = db.execute(
+                select(SeriesWork).where(SeriesWork.work_uuid == w.work_uuid)
+            ).scalar_one_or_none()
+            if in_series:
+                return False
+        if cons.no_ya:
+            ec = db.execute(
+                select(EnrichmentCache).where(EnrichmentCache.work_uuid == w.work_uuid)
+            ).scalar_one_or_none()
+            if ec and ec.raw_categories:
+                if any("young adult" in cat.lower() for cat in ec.raw_categories):
+                    return False
+        return True
+
+    def _apply_trope_filter(c, trope_names):
+        """Returns True if candidate has at least one matching trope."""
+        from app.models.tropes import BookTrope as _BT
+        from app.models.tropes import Trope as _Trope
+
+        count = (
+            db.execute(
+                select(sa_func.count(_BT.trope_uuid))
+                .join(_Trope, _Trope.trope_uuid == _BT.trope_uuid)
+                .where(_BT.work_uuid == uuid.UUID(c.work_uuid))
+                .where(_Trope.canonical_name.in_(trope_names))
+            ).scalar()
+            or 0
+        )
+        return count > 0
+
+    if not candidates and query_trope_names:
+        # Stage 1: relax trope filter (partial match → no filter)
+        cascade_stage = 1
+        logger.info("Cascade stage 1: zero candidates with trope filter. Relaxing.")
+        _handle_discovery_query(
+            db, vibe, expanded_query, constraints, None, candidates, seen
+        )
+        if not candidates and constraints.any_active():
+            cascade_stage = 2
+            logger.info("Cascade stage 2: relaxing structural constraints")
+            _excl = constraints.exclusionary_only()
+            _handle_discovery_query(
+                db, vibe, expanded_query, _excl, None, candidates, seen
+            )
+            if not candidates and _excl.any_active():
+                cascade_stage = 3
+                logger.info(
+                    f"Cascade stage 3: exclusionary active (no_ya={constraints.no_ya}), "
+                    f"pool empty — stopping"
+                )
+    elif not candidates and constraints.any_active():
+        cascade_stage = 2
+        logger.info("Cascade stage 2: relaxing structural constraints")
+        _excl = constraints.exclusionary_only()
+        _handle_discovery_query(
+            db, vibe, expanded_query, _excl, query_trope_names, candidates, seen
+        )
+        if not candidates and _excl.any_active():
+            cascade_stage = 3
+            logger.info(
+                f"Cascade stage 3: exclusionary active (no_ya={constraints.no_ya}), "
+                f"pool empty — stopping"
+            )
+
+    # ── Enrich candidates ──
 
     # Part 2: Stamp is_in_tbr on candidates that are in TBR via non-TBR path.
     # After Part 1 exclusion this is rare, but possible if a book was added to TBR
@@ -492,11 +565,12 @@ def generate_recommendations(
     return RecommendationResponse(
         session_id=session_id,
         query_rewritten=expanded_query,
-        mood_tags_extracted=list(mood_tags_delta.keys()),
+        mood_tags_extracted=list(prefs_atmospheric.keys()),
         results=results,
         author_spotlight=author_spotlight,
         tbr_matches=tbr_matches,
         content_mode=_detect_content_mode(query_trope_names, raw_query),
+        unmatched_tropes=unmatched_tropes,
     )
 
 
@@ -693,13 +767,15 @@ def _handle_lookup_query(db, query, candidates, seen, anchor_author=None):
 # ------------------------------------------------------------------
 
 
-def _handle_similarity_query(db, query, candidates, seen):
-    for c in _pull_vector_candidates(db, query):
+def _handle_similarity_query(
+    db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+):
+    for c in _pull_vector_candidates(db, vibe, constraints, query_trope_names):
         if c.work_uuid not in seen:
             candidates.append(c)
             seen.add(c.work_uuid)
 
-    llm_cands = _generate_llm_expansion(query)
+    llm_cands = _generate_llm_expansion(expanded_query)
     validated = _validate_and_build_llm_candidates(db, llm_cands, skip_tavily=False)
     for c in validated:
         if c.work_uuid not in seen:
@@ -712,8 +788,10 @@ def _handle_similarity_query(db, query, candidates, seen):
 # ------------------------------------------------------------------
 
 
-def _handle_discovery_query(db, query, candidates, seen):
-    llm_cands = _generate_llm_expansion(query)
+def _handle_discovery_query(
+    db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+):
+    llm_cands = _generate_llm_expansion(expanded_query)
     validated = _validate_and_build_llm_candidates(db, llm_cands, skip_tavily=False)
     for c in validated:
         if c.work_uuid not in seen:
@@ -1338,19 +1416,26 @@ def _build_tbr_matches(
 
 
 def _pull_vector_candidates(
-    db: Session, expanded_query: str
+    db: Session, vibe: str, constraints=None, query_trope_names: List[str] | None = None
 ) -> List[reranker.CandidateContext]:
-    # Embed the actual expanded query — never use a dummy vector
+    """
+    Embed the vibe (pure mood) for Qdrant vector search. Apply constraints
+    and trope filters as hard gates on the returned candidates.
+    """
     try:
-        query_vector = llm.embed(expanded_query)
+        query_vector = llm.embed(vibe)
     except Exception as e:
-        logger.error(f"Failed to embed query for vector search: {e}")
+        logger.error(f"Failed to embed vibe for vector search: {e}")
         return []
     try:
-        search_results = qdrant.search_knn("books_catalog", query_vector, limit=10)
+        search_results = qdrant.search_knn("books_catalog", query_vector, limit=30)
     except Exception as e:
         logger.error(f"Vector search failed: {e}")
         return []
+
+    from app.models.series import SeriesWork
+    from app.models.tropes import BookTrope as _BT
+    from app.models.tropes import Trope as _Trope
 
     candidates = []
     for hit in search_results:
@@ -1358,27 +1443,64 @@ def _pull_vector_candidates(
         work = db.execute(
             select(Work).where(Work.work_uuid == uuid.UUID(work_uuid))
         ).scalar_one_or_none()
-        if work:
-            cache = db.execute(
-                select(EnrichmentCache).where(
-                    EnrichmentCache.work_uuid == work.work_uuid
-                )
-            ).scalar_one_or_none()
-            candidates.append(
-                reranker.CandidateContext(
-                    work_uuid=str(work.work_uuid),
-                    title=work.title,
-                    base_vector_score=hit["score"],
-                    is_tbr_context_match=False,
-                    community_buzz_score=(cache.community_buzz_score or 0.0)
-                    if cache
-                    else 0.0,
-                    seen_recently=False,
-                    book_inferred_profile={},
-                    raw_record=work,
-                    match_source="vector",
-                )
+        if not work:
+            continue
+
+        # ── Constraint gates ──
+        if constraints:
+            # standalone_only: exclude works that belong to any series
+            if constraints.standalone_only or constraints.no_series:
+                in_series = db.execute(
+                    select(SeriesWork).where(SeriesWork.work_uuid == work.work_uuid)
+                ).scalar_one_or_none()
+                if in_series:
+                    continue
+
+            # no_ya: exclude if YA-coded (check enrichment cache or tropes)
+            if constraints.no_ya:
+                cache = db.execute(
+                    select(EnrichmentCache).where(
+                        EnrichmentCache.work_uuid == work.work_uuid
+                    )
+                ).scalar_one_or_none()
+                if cache and cache.raw_categories:
+                    if any(
+                        "young adult" in cat.lower() for cat in cache.raw_categories
+                    ):
+                        continue
+
+        # ── Trope filter: must-match if query_trope_names provided ──
+        if query_trope_names:
+            book_trope_count = (
+                db.execute(
+                    select(sa_func.count(_BT.trope_uuid))
+                    .join(_Trope, _Trope.trope_uuid == _BT.trope_uuid)
+                    .where(_BT.work_uuid == work.work_uuid)
+                    .where(_Trope.canonical_name.in_(query_trope_names))
+                ).scalar()
+                or 0
             )
+            if book_trope_count == 0:
+                continue
+
+        cache = db.execute(
+            select(EnrichmentCache).where(EnrichmentCache.work_uuid == work.work_uuid)
+        ).scalar_one_or_none()
+        candidates.append(
+            reranker.CandidateContext(
+                work_uuid=str(work.work_uuid),
+                title=work.title,
+                base_vector_score=hit["score"],
+                is_tbr_context_match=False,
+                community_buzz_score=(cache.community_buzz_score or 0.0)
+                if cache
+                else 0.0,
+                seen_recently=False,
+                book_inferred_profile={},
+                raw_record=work,
+                match_source="vector",
+            )
+        )
     return candidates
 
 

@@ -96,6 +96,7 @@ export interface RecommendationResponse {
   author_spotlight?: AuthorSpotlight | null;
   tbr_matches: TBRMatch[];
   content_mode: string;
+  unmatched_tropes?: string[]; // tropes LLM extracted but not yet in taxonomy
 }
 
 // ── Author Spotlight ──────────────────────────────────────────
