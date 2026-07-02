@@ -60,12 +60,14 @@ def generate_recommendations(
     # If pipeline hits 25s, return whatever we have.
     _start_time = datetime.now(timezone.utc)
 
-    # ── Parallel: Series detection + Query engine ──
+    # ── Parallel: Series detection + Query engine + Tavily rescue ──
+    # Tavily was taking 25s blocking the main thread — moves into the pool
+    # with an 8s timeout to prevent Heroku 30s kills.
     series_ctx = None
     _series_tropes = None
     query_type_from_series = None
+    tavily_enriched: tuple | None = None
 
-    # QueryIntent — structured 4-bucket classification
     qintent: query_engine.QueryIntent = query_engine.QueryIntent()
 
     def _run_series():
@@ -74,7 +76,10 @@ def generate_recommendations(
     def _run_query():
         return query_engine.process_reader_query(db, user_uuid, raw_query)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    def _run_tavily():
+        return _tavily_enrich_similarity_context(raw_query, [], None)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
         future_series = pool.submit(_run_series)
         future_query = pool.submit(_run_query)
 
@@ -90,6 +95,17 @@ def generate_recommendations(
             query_type_from_series = "similarity"
 
         qintent = future_query.result()
+
+        # Fire Tavily speculatively if query looks like bare-title similarity.
+        # Runs in parallel with the above — doesn't block the critical path.
+        if not query_type_from_series:
+            future_tavily = pool.submit(_run_tavily)
+            try:
+                tavily_enriched = future_tavily.result(timeout=8)
+            except Exception:
+                logger.warning(
+                    "Tavily enrichment timed out or failed — proceeding without it"
+                )
 
     # Intent priority: series detection > query engine intent
     query_type = query_type_from_series or qintent.intent
@@ -138,20 +154,20 @@ def generate_recommendations(
     logger.info(f"Query tropes extracted: {query_trope_names}")
     logger.info(f"Anchor author detected: {anchor_author}")
 
-    # Tavily fallback: when the LLM had no trope/author context (bare title queries
-    # like "books like play along"), search for the anchor title to recover both.
-    if query_type == "similarity" and (not query_trope_names or not anchor_author):
-        enriched = _tavily_enrich_similarity_context(
-            raw_query, query_trope_names, anchor_author
-        )
-        if enriched:
-            new_tropes, new_author = enriched
-            if new_tropes and not query_trope_names:
-                query_trope_names = new_tropes
-                logger.info(f"Tavily enriched tropes: {query_trope_names}")
-            if new_author and not anchor_author:
-                anchor_author = new_author
-                logger.info(f"Tavily enriched author: {anchor_author}")
+    # Tavily fallback: use pre-computed result from parallel executor.
+    # This runs speculatively alongside query engine — zero additional latency.
+    if (
+        query_type == "similarity"
+        and (not query_trope_names or not anchor_author)
+        and tavily_enriched
+    ):
+        new_tropes, new_author = tavily_enriched
+        if new_tropes and not query_trope_names:
+            query_trope_names = new_tropes
+            logger.info(f"Tavily enriched tropes: {query_trope_names}")
+        if new_author and not anchor_author:
+            anchor_author = new_author
+            logger.info(f"Tavily enriched author: {anchor_author}")
 
     db_profile = db.execute(
         select(UserProfile).where(UserProfile.user_uuid == user_uuid)
