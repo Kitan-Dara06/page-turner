@@ -56,6 +56,10 @@ def generate_recommendations(
     # Ensure user profile exists (new users from real auth have none)
     user_intelligence.initialize_user_profile(db, user_uuid)
 
+    # Timeout safeguard: Heroku kills requests at 30s.
+    # If pipeline hits 25s, return whatever we have.
+    _start_time = datetime.now(timezone.utc)
+
     # ── Parallel: Series detection + Query engine ──
     series_ctx = None
     _series_tropes = None
@@ -319,7 +323,14 @@ def generate_recommendations(
         _handle_lookup_query(db, expanded_query, candidates, seen, anchor_author)
     elif query_type == "similarity":
         _handle_similarity_query(
-            db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+            db,
+            vibe,
+            expanded_query,
+            constraints,
+            query_trope_names,
+            candidates,
+            seen,
+            _start_time,
         )
     elif query_type == "departure":
         if series_ctx and series_ctx.aggregated_tropes:
@@ -330,11 +341,25 @@ def generate_recommendations(
             }
             idf_weights = {**idf_weights, **_departure_idf}
         _handle_discovery_query(
-            db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+            db,
+            vibe,
+            expanded_query,
+            constraints,
+            query_trope_names,
+            candidates,
+            seen,
+            _start_time,
         )
     else:
         _handle_discovery_query(
-            db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+            db,
+            vibe,
+            expanded_query,
+            constraints,
+            query_trope_names,
+            candidates,
+            seen,
+            _start_time,
         )
 
     # ── Cascade: in-memory filter relaxation if pool is empty ──
@@ -768,12 +793,24 @@ def _handle_lookup_query(db, query, candidates, seen, anchor_author=None):
 
 
 def _handle_similarity_query(
-    db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+    db,
+    vibe,
+    expanded_query,
+    constraints,
+    query_trope_names,
+    candidates,
+    seen,
+    start_time=None,
 ):
     for c in _pull_vector_candidates(db, vibe, constraints, query_trope_names):
         if c.work_uuid not in seen:
             candidates.append(c)
             seen.add(c.work_uuid)
+
+    # Skip LLM expansion if we're close to Heroku's 30s timeout
+    if start_time and (datetime.now(timezone.utc) - start_time).total_seconds() > 22:
+        logger.warning("Skipping LLM expansion — approaching Heroku timeout")
+        return
 
     llm_cands = _generate_llm_expansion(expanded_query)
     validated = _validate_and_build_llm_candidates(db, llm_cands, skip_tavily=False)
@@ -789,8 +826,20 @@ def _handle_similarity_query(
 
 
 def _handle_discovery_query(
-    db, vibe, expanded_query, constraints, query_trope_names, candidates, seen
+    db,
+    vibe,
+    expanded_query,
+    constraints,
+    query_trope_names,
+    candidates,
+    seen,
+    start_time=None,
 ):
+    # Skip LLM expansion if we're close to Heroku's 30s timeout
+    if start_time and (datetime.now(timezone.utc) - start_time).total_seconds() > 22:
+        logger.warning("Skipping LLM expansion — approaching Heroku timeout")
+        return
+
     llm_cands = _generate_llm_expansion(expanded_query)
     validated = _validate_and_build_llm_candidates(db, llm_cands, skip_tavily=False)
     for c in validated:
@@ -1505,13 +1554,13 @@ def _pull_vector_candidates(
 
 
 def _generate_llm_expansion(
-    expanded_query: str, count: int = 3
+    expanded_query: str, count: int = 2
 ) -> List[Dict[str, str]]:
     """
     Ask Gemini to suggest book (title, author) pairs matching the query.
 
-    ``count`` defaults to 3 for the hot path. Each candidate requires a
-    Google Books API call (~6s), so keeping this small is critical for latency.
+    ``count`` defaults to 2 for the hot path. Each candidate requires a
+    Google Books API call, so keeping this small is critical for latency.
     """
     prompt = (
         f"Suggest {count} specific book titles that perfectly match this "

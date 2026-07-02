@@ -325,7 +325,12 @@ def process_reader_query(db: Session, user_uuid: str, raw_query: str) -> QueryIn
         prompt = (
             f"Reader context:\n{ctx}\n\n"
             f'User raw query: "{raw_query}"\n\n'
-            "Classify intent using the reader context. "
+            "IMPORTANT: Classify intent AND extract tropes independently. "
+            "These are SEPARATE tasks — a similarity query CAN have tropes. "
+            "If the user says 'books like X' and X is a dark romance, "
+            "the tropes are Dark Romance and Enemies to Lovers even if you "
+            "don't know the specific book X. Extract tropes from the VIBE "
+            "the user describes, not from the reference book's identity.\n\n"
             "Output strict JSON:"
         )
     else:
