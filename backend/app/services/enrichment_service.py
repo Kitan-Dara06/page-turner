@@ -774,15 +774,21 @@ def _run_qdrant_upsert(
     title: str,
     author_name: str,
 ) -> None:
-    """Build embedding string and upsert to Qdrant. Hard failure."""
-    trope_names = _get_trope_names(db, work)
+    """Build embedding string and upsert to Qdrant. Hard failure.
+
+    Payload includes `trope_names` (list of canonical names, confidence ≥ 0.5)
+    so Qdrant can apply MatchAny trope filters during search_knn, moving
+    trope gating from Python post-processing to the vector DB layer.
+    """
+    trope_names_str = _get_trope_names(db, work)
+    trope_names_list = _get_trope_name_list(db, work)  # for payload index
     tower1_str = _stringify_tower1(cache.tower1_snapshot)
     subjects = ", ".join(cache.subject_tags or [])
     desc = (cache.description or "")[:1500]  # truncate
 
     embedding_text = (
         f"{title} by {author_name}. {desc} "
-        f"Tropes: {trope_names}. "
+        f"Tropes: {trope_names_str}. "
         f"Mood: {tower1_str}. "
         f"Tags: {subjects}."
     )[:2000]  # hard token cap
@@ -800,18 +806,37 @@ def _run_qdrant_upsert(
             "title": work.title,
             "author": author_name,
             "hallucination_verified": cache.hallucination_verified or "unverifiable",
+            # Indexed for MatchAny trope filtering in search_knn
+            "trope_names": trope_names_list,
         },
     )
 
 
 def _get_trope_names(db: Session, work: Work) -> str:
-    """Get comma-joined trope names for this work."""
+    """Get comma-joined trope names for use in embedding text."""
     rows = db.execute(
         select(Trope.canonical_name)
         .join(BookTrope, Trope.trope_uuid == BookTrope.trope_uuid)
         .where(BookTrope.work_uuid == work.work_uuid)
     ).all()
     return ", ".join(r[0] for r in rows)
+
+
+def _get_trope_name_list(db: Session, work: Work) -> list[str]:
+    """Get list of canonical trope names (confidence ≥ 0.5) for Qdrant payload storage.
+
+    This list is stored in the ``trope_names`` Qdrant payload field and enables
+    MatchAny filtering in search_knn without Python post-processing.
+    Only high-confidence tropes are stored to keep the payload clean and precise.
+    """
+    rows = db.execute(
+        select(Trope.canonical_name)
+        .join(BookTrope, Trope.trope_uuid == BookTrope.trope_uuid)
+        .where(BookTrope.work_uuid == work.work_uuid)
+        .where(BookTrope.confidence_score >= 0.5)
+        .order_by(BookTrope.confidence_score.desc())
+    ).all()
+    return [r[0] for r in rows]
 
 
 def _stringify_tower1(snapshot: Optional[dict]) -> str:

@@ -36,6 +36,11 @@ from app.services.enrichment_service import (
     _run_google_books,
 )
 from app.services.series_resolver import resolve_series_from_query
+from app.services.title_resolver import (
+    TitleResolution,
+    extract_anchor_from_query,
+    resolve as resolve_anchor_title,
+)
 from app.workers.enrichment_tasks import enrich_book_task
 
 logger = logging.getLogger(__name__)
@@ -60,13 +65,17 @@ def generate_recommendations(
     # If pipeline hits 25s, return whatever we have.
     _start_time = datetime.now(timezone.utc)
 
-    # ── Parallel: Series detection + Query engine + Tavily rescue ──
-    # Tavily was taking 25s blocking the main thread — moves into the pool
-    # with an 8s timeout to prevent Heroku 30s kills.
+    # ── Parallel: Series detection + Query engine + Title resolver ──
+    # Title resolver runs in parallel with query engine:
+    #   - DB-first: fuzzy title lookup → returns actual book_tropes (authoritative)
+    #   - Google Books fallback: seeds book if missing, fires background enrichment
+    #   - Tavily fallback: author name extraction only (not trope extraction)
+    # This replaces the speculative Tavily trope-extraction call that was
+    # structurally wrong (web prose → canonical tropes gap is unbridgeable on hot path).
     series_ctx = None
     _series_tropes = None
     query_type_from_series = None
-    tavily_enriched: tuple | None = None
+    title_resolution: Optional[TitleResolution] = None
 
     qintent: query_engine.QueryIntent = query_engine.QueryIntent()
 
@@ -76,12 +85,17 @@ def generate_recommendations(
     def _run_query():
         return query_engine.process_reader_query(db, user_uuid, raw_query)
 
-    def _run_tavily():
-        return _tavily_enrich_similarity_context(raw_query, [], None)
+    def _run_title_resolver():
+        """Extract anchor title from query and resolve it via DB → GB → Tavily."""
+        anchor_title, author_hint = extract_anchor_from_query(raw_query)
+        if not anchor_title:
+            return None
+        return resolve_anchor_title(db, anchor_title, author_hint)
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         future_series = pool.submit(_run_series)
         future_query = pool.submit(_run_query)
+        future_title = pool.submit(_run_title_resolver)
 
         series_ctx = future_series.result()
         if series_ctx:
@@ -96,24 +110,31 @@ def generate_recommendations(
 
         qintent = future_query.result()
 
-        # Fire Tavily speculatively if query looks like bare-title similarity.
-        # Runs in parallel with the above — doesn't block the critical path.
-        if not query_type_from_series:
-            future_tavily = pool.submit(_run_tavily)
-            try:
-                tavily_enriched = future_tavily.result(timeout=8)
-            except Exception:
-                logger.warning(
-                    "Tavily enrichment timed out or failed — proceeding without it"
-                )
+        try:
+            title_resolution = future_title.result(timeout=10)
+        except Exception:
+            logger.warning("Title resolver timed out or failed — proceeding without it")
 
-    # Intent priority: series detection > query engine intent
-    query_type = query_type_from_series or qintent.intent
-    logger.info(
-        f"Query intent: {query_type} (series_override={bool(query_type_from_series)})"
-    )
+    if title_resolution:
+        logger.info(
+            f"Title resolved: '{title_resolution.title}' "
+            f"source={title_resolution.source} "
+            f"status={title_resolution.enrichment_status} "
+            f"tropes={len(title_resolution.trope_names)}"
+        )
 
-    # Extract from QueryIntent
+    # ── Title Resolver: authoritative trope injection for similarity queries ──
+    # Priority order for query_trope_names:
+    #   1. Series aggregated tropes (highest confidence — aggregated from full series DB)
+    #   2. Title resolver DB tropes (anchor book's actual book_tropes, conf ≥ 0.5)
+    #   3. LLM-extracted tropes from query_engine (fallback for vibe/discovery queries)
+    #   4. Tavily supplementary tropes (lowest priority — prose-to-trope mapping noise)
+    #
+    # Tavily supplementary tropes are kept per user request as a safety net for
+    # books where DB enrichment is pending (partial/unknown status). They are
+    # appended AFTER DB tropes, not replacing them.
+
+    # Extract from QueryIntent (LLM baseline)
     expanded_query = qintent.expanded_query or raw_query
     vibe = qintent.vibe or expanded_query
     query_trope_names = list(qintent.query_tropes)
@@ -123,9 +144,96 @@ def generate_recommendations(
     prefs_atmospheric = dict(qintent.preferences_atmospheric)
     prefs_boundary = dict(qintent.preferences_boundary)
 
-    # Merge series tropes into LLM-extracted tropes (series takes priority)
+    # Intent priority: series detection > query engine intent
+    query_type = query_type_from_series or qintent.intent
+    logger.info(
+        f"Query intent: {query_type} (series_override={bool(query_type_from_series)})"
+    )
+
+    # Inject title resolver tropes for similarity queries
+    _resolver_tropes_used = False
+    if (
+        query_type == "similarity"
+        and title_resolution
+        and title_resolution.trope_names
+        and title_resolution.enrichment_status == "complete"
+    ):
+        # Authoritative signal: merge resolver tropes first, then LLM tropes not already present
+        _merged = list(
+            dict.fromkeys(
+                title_resolution.trope_names
+                + [t for t in query_trope_names if t not in set(title_resolution.trope_names)]
+            )
+        )[:8]
+        if _merged != query_trope_names:
+            logger.info(
+                f"Title resolver trope injection: LLM={query_trope_names} → "
+                f"DB+LLM merged={_merged}"
+            )
+        query_trope_names = _merged
+        anchor_defining_tropes = title_resolution.anchor_defining_tropes
+        _resolver_tropes_used = True
+
+        # Propagate resolved author name if LLM missed it
+        if not anchor_author and title_resolution.author:
+            anchor_author = title_resolution.author
+            logger.info(f"Title resolver provided author: {anchor_author}")
+
+    elif (
+        query_type == "similarity"
+        and title_resolution
+        and title_resolution.trope_names
+        and title_resolution.enrichment_status == "partial"
+    ):
+        # Partial enrichment: use whatever tropes exist + keep LLM as supplement
+        _partial_merged = list(
+            dict.fromkeys(
+                title_resolution.trope_names
+                + [t for t in query_trope_names if t not in set(title_resolution.trope_names)]
+            )
+        )[:8]
+        logger.info(
+            f"Title resolver partial tropes: {title_resolution.trope_names} "
+            f"(merged with LLM: {_partial_merged})"
+        )
+        query_trope_names = _partial_merged
+        if not anchor_author and title_resolution.author:
+            anchor_author = title_resolution.author
+
+    # Tavily supplementary tropes — safety net for DB miss or unenriched books.
+    # Fires when: similarity query AND resolver returned no usable tropes.
+    # Tavily's role: provide web-sourced genre signals as last resort.
+    # These are lower-confidence than DB tropes, so they are appended, not prepended.
+    if (
+        query_type == "similarity"
+        and not _resolver_tropes_used
+        and not query_trope_names
+        and (not title_resolution or title_resolution.enrichment_status in ("unknown", "miss", None))
+    ):
+        _tavily_fallback = _tavily_enrich_similarity_context(raw_query, query_trope_names, anchor_author)
+        if _tavily_fallback:
+            new_tropes, new_author = _tavily_fallback
+            if new_tropes:
+                query_trope_names = new_tropes
+                logger.info(f"Tavily supplementary tropes (DB miss fallback): {query_trope_names}")
+            if new_author and not anchor_author:
+                anchor_author = new_author
+                logger.info(f"Tavily supplementary author: {anchor_author}")
+
+    db_profile = db.execute(
+        select(UserProfile).where(UserProfile.user_uuid == user_uuid)
+    ).scalar_one()
+    tower1_profile = Tower1Profile.model_validate(db_profile)
+
+    # Compute IDF weights once per request — used for query-trope scoring
+    idf_weights = reranker.compute_trope_idf(db)
+
+    candidates: List[reranker.CandidateContext] = []
+    seen: set = set()
+    anchor_defining_tropes: List[str] = []  # confidence-1.0 tropes from anchor book
+
+    # Series augmentation — inject series tropes and vibe prefix into expanded_query
     if _series_tropes:
-        _existing = set(query_trope_names)
         query_trope_names = (
             _series_tropes
             + [t for t in query_trope_names if t not in set(_series_tropes)]
@@ -143,47 +251,17 @@ def generate_recommendations(
         expanded_query = _prefix + expanded_query
         logger.info(f"Series-augmented query: {expanded_query[:200]}...")
     elif series_ctx and series_ctx.series_description:
-        # No canonical tropes matched, but we have a rich natural-language
-        # vibe description from Tavily. Inject it for vector search.
         _vibe_prefix = (
             f"Books similar to the {series_ctx.series_title} series by "
             f"{series_ctx.author_name}. Series vibe: {series_ctx.series_description}. "
         )
         expanded_query = _vibe_prefix + expanded_query
         logger.info(f"Series vibe-augmented query: {expanded_query[:250]}...")
-    logger.info(f"Query tropes extracted: {query_trope_names}")
-    logger.info(f"Anchor author detected: {anchor_author}")
 
-    # Tavily fallback: use pre-computed result from parallel executor.
-    # This runs speculatively alongside query engine — zero additional latency.
-    if (
-        query_type == "similarity"
-        and (not query_trope_names or not anchor_author)
-        and tavily_enriched
-    ):
-        new_tropes, new_author = tavily_enriched
-        if new_tropes and not query_trope_names:
-            query_trope_names = new_tropes
-            logger.info(f"Tavily enriched tropes: {query_trope_names}")
-        if new_author and not anchor_author:
-            anchor_author = new_author
-            logger.info(f"Tavily enriched author: {anchor_author}")
+    logger.info(f"Query tropes (final): {query_trope_names}")
+    logger.info(f"Anchor author: {anchor_author}")
 
-    db_profile = db.execute(
-        select(UserProfile).where(UserProfile.user_uuid == user_uuid)
-    ).scalar_one()
-    tower1_profile = Tower1Profile.model_validate(db_profile)
-
-    # Compute IDF weights once per request — used for query-trope scoring
-    idf_weights = reranker.compute_trope_idf(db)
-
-    candidates: List[reranker.CandidateContext] = []
-    seen: set = set()
-    anchor_defining_tropes: List[str] = []  # confidence-1.0 tropes from anchor book
-
-    # Part 0: Exclude series books from results — user already read them.
-    # For DB-resolved series, work_uuids are definitive. For Tavily-resolved
-    # series, search local DB for works matching the resolved book titles.
+    # Part 0: Exclude series books from results
     if series_ctx:
         if series_ctx.work_uuids:
             for _wid in series_ctx.work_uuids:
@@ -205,8 +283,6 @@ def generate_recommendations(
             logger.info(f"Tavily series exclusion: matched {len(seen)} works by title")
 
     # Part 1: Seed `seen` with ALL active TBR work_uuids before any candidate pulling.
-    # TBR books are conceptually separate from recommendations (reading queue vs discovery).
-    # They are returned in tbr_matches, a separate strip, not mixed into the main list.
     _tbr_uuids: set = set()
     _tbr_rows = (
         db.execute(
@@ -221,115 +297,60 @@ def generate_recommendations(
         _tbr_uuids.add(str(_wu))
         seen.add(str(_wu))
 
-    # Similarity anchor resolution:
-    # 1. Exclude the anchor book from its own results (seed `seen`).
-    # 2. When the anchor is fully enriched in our DB, use its actual tropes and
-    #    Tower1 profile to augment both query_trope_names and expanded_query.
-    #
-    # Why this matters: "books like God of Fury" expands to generic dark romance
-    # vocabulary and embeds in the mafia/dark cluster in Qdrant. Heated Rivalry,
-    # Captive Prince, etc. never surface because they embed differently (sports,
-    # fantasy). The anchor book's DB tropes are the authoritative signal — MM Romance
-    # at confidence 1.0 should drive both the Qdrant search direction and the
-    # zero-overlap gate that suppresses non-MM dark romance books.
-    if query_type == "similarity":
-        import re as _re
+    # Anchor exclusion + defining trope injection.
+    # When TitleResolver resolved the anchor, we use its work_uuid directly
+    # (no redundant DB query). Defining tropes already populated above.
+    if query_type == "similarity" and title_resolution and title_resolution.work_uuid:
+        seen.add(title_resolution.work_uuid)
+        logger.info(
+            f"Anchor exclusion via resolver: '{title_resolution.title}' "
+            f"({title_resolution.work_uuid})"
+        )
+        # Defining tropes from resolver (already set above for complete status)
+        if not anchor_defining_tropes and title_resolution.anchor_defining_tropes:
+            anchor_defining_tropes = title_resolution.anchor_defining_tropes
 
+        # Build expanded_query from anchor's actual tropes + Tower1 (when complete)
+        if (
+            title_resolution.enrichment_status == "complete"
+            and title_resolution.trope_names
+            and not _series_tropes  # series takes precedence over single-book anchor
+        ):
+            _trope_str = ", ".join(title_resolution.trope_names[:6])
+            _t1_str = " ".join(
+                f"{k.replace('_', ' ')} {v:.1f}"
+                for k, v in title_resolution.tower1_snapshot.items()
+                if isinstance(v, float) and v >= 0.6
+            )
+            _anchor_prefix = (
+                f"{title_resolution.title} core tropes: {_trope_str}. "
+                f"Defining qualities: {_t1_str}. "
+            )
+            expanded_query = _anchor_prefix + expanded_query
+            logger.info(
+                f"Anchor query augmentation from resolver for '{title_resolution.title}'"
+            )
+
+    elif query_type == "similarity" and not title_resolution:
+        # Resolver returned nothing (no anchor pattern matched) — fall back to
+        # the legacy regex anchor lookup for backward compatibility with edge cases.
+        import re as _re
         _title_match = _re.search(
             r"(?:like|similar to|reminiscent of|more like|in the style of)\s+(.+?)(?:\s+by\s+|$)",
-            raw_query.strip(),
-            _re.IGNORECASE,
+            raw_query.strip(), _re.IGNORECASE,
         )
         if _title_match:
             _anchor_title = _title_match.group(1).strip().strip("\"'")
             if _anchor_title and len(_anchor_title) >= 3:
                 from sqlalchemy import func as _sf
-
-                _anchor_work = (
-                    db.execute(
-                        select(Work).where(
-                            _sf.lower(Work.title) == _anchor_title.lower()
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
+                _anchor_work = db.execute(
+                    select(Work).where(_sf.lower(Work.title) == _anchor_title.lower())
+                ).scalars().first()
                 if _anchor_work:
                     seen.add(str(_anchor_work.work_uuid))
                     logger.info(
-                        f"Anchor exclusion: seeded seen with '{_anchor_work.title}' "
-                        f"({_anchor_work.work_uuid})"
+                        f"Legacy anchor exclusion: '{_anchor_work.title}' ({_anchor_work.work_uuid})"
                     )
-
-                    # Load anchor book tropes if fully enriched — use as authoritative
-                    # query signal rather than relying on the LLM's title-text guess.
-                    if _anchor_work.enrichment_status == "complete":
-                        from app.models.tropes import BookTrope as _BT
-                        from app.models.tropes import Trope as _Trope
-
-                        _anchor_trope_rows = db.execute(
-                            select(_Trope.canonical_name, _BT.confidence_score)
-                            .join(_BT, _BT.trope_uuid == _Trope.trope_uuid)
-                            .where(_BT.work_uuid == _anchor_work.work_uuid)
-                            .where(_BT.confidence_score >= 0.5)
-                            .order_by(_BT.confidence_score.desc())
-                        ).all()
-
-                        _anchor_trope_names = [name for name, _ in _anchor_trope_rows]
-
-                        # Confidence-1.0 only — the book's identity-level descriptors.
-                        # Passed to rank_candidates as anchor_defining_tropes.
-                        anchor_defining_tropes = [
-                            name for name, score in _anchor_trope_rows if score == 1.0
-                        ]
-                        if anchor_defining_tropes:
-                            logger.info(
-                                f"Anchor defining tropes (conf=1.0): {anchor_defining_tropes}"
-                            )
-
-                        if _anchor_trope_names:
-                            # Merge: anchor tropes take priority, then fill with LLM
-                            # tropes not already present (up to 8 total)
-                            _merged = list(
-                                dict.fromkeys(
-                                    _anchor_trope_names
-                                    + [
-                                        t
-                                        for t in query_trope_names
-                                        if t not in set(_anchor_trope_names)
-                                    ]
-                                )
-                            )[:8]
-                            if _merged != query_trope_names:
-                                logger.info(
-                                    f"Anchor trope augmentation: {query_trope_names} → {_merged}"
-                                )
-                                query_trope_names = _merged
-
-                        # Augment expanded_query with anchor's actual trope + Tower1 data
-                        # so the Qdrant embedding lands in the right neighbourhood.
-                        _anchor_cache = db.execute(
-                            select(EnrichmentCache).where(
-                                EnrichmentCache.work_uuid == _anchor_work.work_uuid
-                            )
-                        ).scalar_one_or_none()
-
-                        if _anchor_cache and _anchor_trope_names:
-                            _trope_str = ", ".join(_anchor_trope_names[:6])
-                            _t1 = _anchor_cache.tower1_snapshot or {}
-                            _t1_str = " ".join(
-                                f"{k.replace('_', ' ')} {v:.1f}"
-                                for k, v in _t1.items()
-                                if isinstance(v, float) and v >= 0.6
-                            )
-                            _anchor_prefix = (
-                                f"{_anchor_work.title} core tropes: {_trope_str}. "
-                                f"Defining qualities: {_t1_str}. "
-                            )
-                            expanded_query = _anchor_prefix + expanded_query
-                            logger.info(
-                                f"Anchor query augmentation prepended for '{_anchor_work.title}'"
-                            )
 
     # TBR books are excluded from the main candidate pool (seeded into `seen` above).
     # They surface via _build_tbr_matches() after ranking, as a separate strip.
@@ -1484,16 +1505,40 @@ def _pull_vector_candidates(
     db: Session, vibe: str, constraints=None, query_trope_names: List[str] | None = None
 ) -> List[reranker.CandidateContext]:
     """
-    Embed the vibe (pure mood) for Qdrant vector search. Apply constraints
-    and trope filters as hard gates on the returned candidates.
+    Embed the vibe (pure mood) for Qdrant vector search.
+
+    Trope filtering strategy (two-tier for backward compatibility):
+      Tier 1 — Qdrant-native MatchAny filter: when query_trope_names provided,
+               passed as trope_filter to search_knn. Qdrant filters against the
+               indexed `trope_names` payload field. Only books enriched AFTER
+               this deploy have `trope_names` in their payload.
+      Tier 2 — Python post-filter: for hits whose payload lacks `trope_names`
+               (pre-deploy books), fall back to the existing DB count query.
+               This tier self-eliminates as the catalog is re-indexed.
+
+    Constraint gates (standalone_only, no_ya, etc.) remain Python post-filters
+    since they query series membership and enrichment cache — not in Qdrant payload.
     """
     try:
         query_vector = llm.embed(vibe)
     except Exception as e:
         logger.error(f"Failed to embed vibe for vector search: {e}")
         return []
+
+    # Increase candidate pool when trope filtering at Qdrant level —
+    # the filter reduces the pool, so ask for more to ensure enough candidates.
+    qdrant_limit = 50 if query_trope_names else 30
+
     try:
-        search_results = qdrant.search_knn("books_catalog", query_vector, limit=30)
+        search_results = qdrant.search_knn(
+            "books_catalog",
+            query_vector,
+            limit=qdrant_limit,
+            # Pass tropes as Qdrant-native filter — books without `trope_names`
+            # in their payload are NOT excluded here (backward compatible).
+            # The Python post-filter below handles pre-deploy books.
+            trope_filter=query_trope_names if query_trope_names else None,
+        )
     except Exception as e:
         logger.error(f"Vector search failed: {e}")
         return []
@@ -1534,19 +1579,26 @@ def _pull_vector_candidates(
                     ):
                         continue
 
-        # ── Trope filter: must-match if query_trope_names provided ──
+        # ── Tier-2 trope post-filter: only for pre-deploy books ──
+        # If Qdrant already filtered via trope_names payload (Tier 1), the hit
+        # passed the filter at search time. We detect pre-deploy books by checking
+        # whether `trope_names` is absent from the hit payload.
         if query_trope_names:
-            book_trope_count = (
-                db.execute(
-                    select(sa_func.count(_BT.trope_uuid))
-                    .join(_Trope, _Trope.trope_uuid == _BT.trope_uuid)
-                    .where(_BT.work_uuid == work.work_uuid)
-                    .where(_Trope.canonical_name.in_(query_trope_names))
-                ).scalar()
-                or 0
-            )
-            if book_trope_count == 0:
-                continue
+            payload = hit.get("payload", {})
+            payload_has_tropes = "trope_names" in payload and payload["trope_names"]
+            if not payload_has_tropes:
+                # Pre-deploy book: apply Python post-filter as fallback
+                book_trope_count = (
+                    db.execute(
+                        select(sa_func.count(_BT.trope_uuid))
+                        .join(_Trope, _Trope.trope_uuid == _BT.trope_uuid)
+                        .where(_BT.work_uuid == work.work_uuid)
+                        .where(_Trope.canonical_name.in_(query_trope_names))
+                    ).scalar()
+                    or 0
+                )
+                if book_trope_count == 0:
+                    continue
 
         cache = db.execute(
             select(EnrichmentCache).where(EnrichmentCache.work_uuid == work.work_uuid)

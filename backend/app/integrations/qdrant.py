@@ -19,9 +19,11 @@ client = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
 
 # Fields that must have a payload index for filtered queries.
 # The Tower 2 latent profile and orphan-queue review both filter by work_uuid.
+# trope_names is a keyword array — used for MatchAny trope filtering in similarity queries.
 REQUIRED_PAYLOAD_INDEXES = [
     {"name": "work_uuid", "type": "keyword"},
     {"name": "hallucination_verified", "type": "keyword"},
+    {"name": "trope_names", "type": "keyword"},
 ]
 
 
@@ -109,6 +111,7 @@ def search_knn(
     query_vector: list[float],
     limit: int = 10,
     filter_dict: dict = None,
+    trope_filter: Optional[List[str]] = None,
     timeout_seconds: int = 5,
     retries: int = 2,
 ) -> List[Dict[str, Any]]:
@@ -118,11 +121,18 @@ def search_knn(
     We retry up to ``retries`` times with a short per-attempt timeout.
 
     Args:
-        filter_dict: Payload filter, e.g. ``{"work_uuid": "..."}``.
-                     Requires a ``keyword`` payload index on the field.
+        filter_dict:   Payload filter, e.g. ``{"work_uuid": "..."}``.
+                       Requires a ``keyword`` payload index on the field.
+        trope_filter:  List of canonical trope names. When provided, Qdrant
+                       returns only points whose ``trope_names`` payload contains
+                       at least one of these values (MatchAny / logical OR).
+                       This moves trope filtering from Python post-processing
+                       to the DB layer, dramatically shrinking the candidate pool
+                       before Python sees it.
+                       Requires a ``keyword`` payload index on ``trope_names``.
         timeout_seconds: Per-attempt timeout for the gRPC/REST call.
     """
-    from qdrant_client.models import FieldCondition, Filter, MatchValue
+    from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 
     kwargs: Dict[str, Any] = {
         "collection_name": collection_name,
@@ -131,12 +141,24 @@ def search_knn(
         "with_payload": True,
         "with_vectors": False,
     }
+
+    conditions = []
     if filter_dict:
-        conditions = [
+        conditions.extend(
             FieldCondition(key=k, match=MatchValue(value=v))
             for k, v in filter_dict.items()
-        ]
-        kwargs["query_filter"] = Filter(should=conditions)
+        )
+    if trope_filter:
+        # MatchAny: point passes if trope_names payload contains ANY of these tropes.
+        # This is a Qdrant-native OR filter — far cheaper than post-filtering in Python.
+        conditions.append(
+            FieldCondition(
+                key="trope_names",
+                match=MatchAny(any=trope_filter),
+            )
+        )
+    if conditions:
+        kwargs["query_filter"] = Filter(must=conditions)
 
     last_error = None
     for attempt in range(1 + retries):
