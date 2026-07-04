@@ -39,6 +39,8 @@ from app.services.series_resolver import resolve_series_from_query
 from app.services.title_resolver import (
     TitleResolution,
     extract_anchor_from_query,
+)
+from app.services.title_resolver import (
     resolve as resolve_anchor_title,
 )
 from app.workers.enrichment_tasks import enrich_book_task
@@ -162,7 +164,11 @@ def generate_recommendations(
         _merged = list(
             dict.fromkeys(
                 title_resolution.trope_names
-                + [t for t in query_trope_names if t not in set(title_resolution.trope_names)]
+                + [
+                    t
+                    for t in query_trope_names
+                    if t not in set(title_resolution.trope_names)
+                ]
             )
         )[:8]
         if _merged != query_trope_names:
@@ -189,7 +195,11 @@ def generate_recommendations(
         _partial_merged = list(
             dict.fromkeys(
                 title_resolution.trope_names
-                + [t for t in query_trope_names if t not in set(title_resolution.trope_names)]
+                + [
+                    t
+                    for t in query_trope_names
+                    if t not in set(title_resolution.trope_names)
+                ]
             )
         )[:8]
         logger.info(
@@ -208,14 +218,21 @@ def generate_recommendations(
         query_type == "similarity"
         and not _resolver_tropes_used
         and not query_trope_names
-        and (not title_resolution or title_resolution.enrichment_status in ("unknown", "miss", None))
+        and (
+            not title_resolution
+            or title_resolution.enrichment_status in ("unknown", "miss", None)
+        )
     ):
-        _tavily_fallback = _tavily_enrich_similarity_context(raw_query, query_trope_names, anchor_author)
+        _tavily_fallback = _tavily_enrich_similarity_context(
+            raw_query, query_trope_names, anchor_author
+        )
         if _tavily_fallback:
             new_tropes, new_author = _tavily_fallback
             if new_tropes:
                 query_trope_names = new_tropes
-                logger.info(f"Tavily supplementary tropes (DB miss fallback): {query_trope_names}")
+                logger.info(
+                    f"Tavily supplementary tropes (DB miss fallback): {query_trope_names}"
+                )
             if new_author and not anchor_author:
                 anchor_author = new_author
                 logger.info(f"Tavily supplementary author: {anchor_author}")
@@ -335,17 +352,26 @@ def generate_recommendations(
         # Resolver returned nothing (no anchor pattern matched) — fall back to
         # the legacy regex anchor lookup for backward compatibility with edge cases.
         import re as _re
+
         _title_match = _re.search(
             r"(?:like|similar to|reminiscent of|more like|in the style of)\s+(.+?)(?:\s+by\s+|$)",
-            raw_query.strip(), _re.IGNORECASE,
+            raw_query.strip(),
+            _re.IGNORECASE,
         )
         if _title_match:
             _anchor_title = _title_match.group(1).strip().strip("\"'")
             if _anchor_title and len(_anchor_title) >= 3:
                 from sqlalchemy import func as _sf
-                _anchor_work = db.execute(
-                    select(Work).where(_sf.lower(Work.title) == _anchor_title.lower())
-                ).scalars().first()
+
+                _anchor_work = (
+                    db.execute(
+                        select(Work).where(
+                            _sf.lower(Work.title) == _anchor_title.lower()
+                        )
+                    )
+                    .scalars()
+                    .first()
+                )
                 if _anchor_work:
                     seen.add(str(_anchor_work.work_uuid))
                     logger.info(
@@ -893,7 +919,7 @@ def _handle_discovery_query(
         or 0
     )
     if catalog_count >= 20:
-        for c in _pull_vector_candidates(db, query):
+        for c in _pull_vector_candidates(db, vibe, constraints, query_trope_names):
             if c.work_uuid not in seen:
                 candidates.append(c)
                 seen.add(c.work_uuid)

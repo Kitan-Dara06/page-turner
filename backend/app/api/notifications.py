@@ -18,35 +18,33 @@ def get_undismissed_releases(
     user_uuid: str = Depends(get_current_user_uuid),
 ):
     """FR-AT-02: Returns undismissed author_new_release events for the current user."""
-    # Filter undismissed in SQL — don't let the 20-row limit hide older alerts
-    events = (
-        db.execute(
-            select(InteractionEvent)
-            .where(
-                InteractionEvent.user_uuid == user_uuid,
-                InteractionEvent.event_type == EventType.AUTHOR_NEW_RELEASE,
-                InteractionEvent.mood_tags["dismissed"].as_boolean() == False,
-            )
-            .order_by(InteractionEvent.event_timestamp.desc())
-            .limit(50)
-        )
-        .scalars()
-        .all()
-    )
+    from sqlalchemy import text
+
+    rows = db.execute(
+        text(
+            "SELECT event_uuid, mood_tags, event_timestamp, work_uuid "
+            "FROM interaction_events "
+            "WHERE user_uuid = :uid "
+            "AND event_type = 'author_new_release' "
+            "AND (mood_tags->>'dismissed' IS NULL OR mood_tags->>'dismissed' != 'true') "
+            "ORDER BY event_timestamp DESC "
+            "LIMIT 50"
+        ),
+        {"uid": user_uuid},
+    ).all()
+
     return {
-        "count": len(events),
+        "count": len(rows),
         "releases": [
             {
-                "event_uuid": str(e.event_uuid),
-                "title": (e.mood_tags or {}).get("title", "Unknown"),
-                "author_name": (e.mood_tags or {}).get("author_name", "Unknown"),
-                "publication_date": str(
-                    (e.mood_tags or {}).get("publication_date", "")
-                ),
-                "work_uuid": str(e.work_uuid) if e.work_uuid else None,
-                "dismissed": (e.mood_tags or {}).get("dismissed", False),
+                "event_uuid": str(r[0]),
+                "title": (r[1] or {}).get("title", "Unknown"),
+                "author_name": (r[1] or {}).get("author_name", "Unknown"),
+                "publication_date": str((r[1] or {}).get("publication_date", "")),
+                "work_uuid": str(r[3]) if r[3] else None,
+                "dismissed": (r[1] or {}).get("dismissed", False),
             }
-            for e in events
+            for r in rows
         ],
     }
 
@@ -58,17 +56,19 @@ def dismiss_release(
     user_uuid: str = Depends(get_current_user_uuid),
 ):
     """FR-AT-02: Marks a release notification as dismissed."""
-    event = db.execute(
-        select(InteractionEvent).where(
-            InteractionEvent.event_uuid == event_uuid,
-            InteractionEvent.user_uuid == user_uuid,
-            InteractionEvent.event_type == EventType.AUTHOR_NEW_RELEASE,
-        )
-    ).scalar_one_or_none()
-    if not event:
+    from sqlalchemy import text
+
+    result = db.execute(
+        text(
+            "UPDATE interaction_events "
+            "SET mood_tags = jsonb_set(mood_tags, '{dismissed}', 'true'::jsonb) "
+            "WHERE event_uuid = :eid "
+            "AND user_uuid = :uid "
+            "AND event_type = 'author_new_release'"
+        ),
+        {"eid": event_uuid, "uid": user_uuid},
+    )
+    if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Release notification not found.")
-    tags = event.mood_tags or {}
-    tags["dismissed"] = True
-    event.mood_tags = tags
     db.commit()
     return {"status": "dismissed"}
