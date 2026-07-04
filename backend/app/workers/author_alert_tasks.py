@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -151,43 +152,53 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
                 if pub < past_cutoff or pub > future_cutoff:
                     continue
 
-                # Only skip if an UNDISMISSED notification already exists for this release.
-                # If the user dismissed the old one, create a fresh event so it re-surfaces.
+                # Only skip if an UNDISMISSED notification already exists
                 already_notified = db.execute(
-                    select(InteractionEvent.event_uuid).where(
-                        InteractionEvent.user_uuid == user_uuid,
-                        InteractionEvent.event_type == EventType.AUTHOR_NEW_RELEASE,
-                        InteractionEvent.mood_tags["title"].as_string() == title,
-                        InteractionEvent.mood_tags["author_name"].as_string()
-                        == author_name,
-                        InteractionEvent.mood_tags["dismissed"].as_boolean() == False,
-                    )
+                    text(
+                        "SELECT event_uuid FROM interaction_events "
+                        "WHERE user_uuid = :uid "
+                        "AND event_type = 'author_new_release' "
+                        "AND mood_tags->>'title' = :title "
+                        "AND mood_tags->>'author_name' = :author "
+                        "AND mood_tags->>'dismissed' = 'false'"
+                    ),
+                    {"uid": user_uuid, "title": title, "author": author_name},
                 ).scalar_one_or_none()
 
                 if already_notified:
                     continue
 
-                # Find or create the Work
-                work = db.execute(
-                    select(Work).where(
-                        func.lower(Work.title) == title.lower(),
-                        Work.person_uuid == person_uuid,
-                    )
+                # Find or create the Work via raw SQL (ORM mapper issue)
+                work_uuid = db.execute(
+                    text(
+                        "SELECT work_uuid FROM works "
+                        "WHERE LOWER(title) = LOWER(:title) "
+                        "AND person_uuid = :pid"
+                    ),
+                    {"title": title, "pid": person_uuid},
                 ).scalar_one_or_none()
 
-                event = InteractionEvent(
-                    user_uuid=user_uuid,
-                    work_uuid=work.work_uuid if work else None,
-                    event_type=EventType.AUTHOR_NEW_RELEASE,
-                    mood_tags={
-                        "title": title,
-                        "author_name": author_name,
-                        "publication_date": pub_date,
-                        "isbn": isbns[0] if isbns else None,
-                        "dismissed": False,
+                # Insert release event via raw SQL
+                db.execute(
+                    text(
+                        "INSERT INTO interaction_events "
+                        "(event_uuid, user_uuid, work_uuid, event_type, event_timestamp, mood_tags) "
+                        "VALUES (gen_random_uuid(), :uid, :wid, 'author_new_release', now(), :tags::jsonb)"
+                    ),
+                    {
+                        "uid": user_uuid,
+                        "wid": str(work_uuid) if work_uuid else None,
+                        "tags": json.dumps(
+                            {
+                                "title": title,
+                                "author_name": author_name,
+                                "publication_date": pub_date,
+                                "isbn": isbns[0] if isbns else None,
+                                "dismissed": False,
+                            }
+                        ),
                     },
                 )
-                db.add(event)
                 new_releases += 1
                 found_for_author += 1
 
