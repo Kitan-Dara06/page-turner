@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { onboarding as onboardingApi } from "@/lib/api";
+import { ApiError } from "@/lib/types";
 import { WorkResponse, FlashcardDecision } from "@/lib/types";
 import BookCover from "./BookCover";
 import styles from "./FlashcardStack.module.css";
@@ -47,8 +48,14 @@ export default function FlashcardStack() {
         setCards(data);
         setLoading(false);
       })
-      .catch((e) => {
-        setError(e.detail ?? "Failed to load calibration books.");
+      .catch((e: unknown) => {
+        const msg =
+          e instanceof ApiError
+            ? e.detail
+            : e instanceof Error
+              ? e.message
+              : "Failed to load calibration books.";
+        setError(msg);
         setLoading(false);
       });
   }, []);

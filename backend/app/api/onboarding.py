@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
 from app.dependencies import get_current_user_uuid
@@ -56,6 +56,11 @@ def get_onboarding_flashcards(
         .join(EnrichmentCache, Work.work_uuid == EnrichmentCache.work_uuid)
         .where(EnrichmentCache.flashcard_pool == True)
         .where(Work.work_uuid.notin_(swiped_subq))
+        .options(
+            selectinload(Work.person),
+            selectinload(Work.editions),
+            selectinload(Work.series_links).selectinload("series"),
+        )
     )
 
     if is_post_onboarding and user_profile:

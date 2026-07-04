@@ -1191,20 +1191,32 @@ def _enrich_candidate_metadata(
     db: Session, candidates: List[reranker.CandidateContext]
 ) -> None:
     """
-    Single DB round-trip: load tower1_snapshot and is_narrative from EnrichmentCache
-    and stamp both fields onto each candidate in-place.
+    Stamp tower1_snapshot, is_narrative, description, and a person-loaded raw_record
+    onto each candidate in-place.
 
-    Fixes two silent bugs:
-    - Bug A: book_inferred_profile was always {} in every CandidateContext constructor,
-      causing _calculate_tower1_overlap to return the 0.5 neutral fallback for every book
-      (even non-fiction), giving all books an identical free Tower1 score of 0.125.
-    - Bug B: is_narrative was never propagated from the DB, so the reranker couldn't
-      zero Tower1 for non-fiction works.
+    Vector-path candidates are already fully enriched by `_pull_vector_candidates`
+    (their raw_record has joinedload person/editions/series_links, and their
+    book_inferred_profile/is_narrative/description are pre-populated from the batch
+    cache load). Detected by: raw_record.person already loaded (not a lazy proxy).
+
+    LLM-path candidates (match_source=="llm") still need DB enrichment — they arrive
+    with raw_record populated from a savepoint write and person not yet loaded.
     """
     if not candidates:
         return
 
-    work_uuids = [uuid.UUID(c.work_uuid) for c in candidates]
+    # Split: LLM candidates need DB enrichment; vector candidates are pre-enriched.
+    needs_enrichment = [
+        c for c in candidates if c.match_source != "vector"
+    ]
+
+    if not needs_enrichment:
+        return
+
+    from sqlalchemy.orm import selectinload
+
+    work_uuids = [uuid.UUID(c.work_uuid) for c in needs_enrichment]
+
     caches = (
         db.execute(
             select(EnrichmentCache).where(EnrichmentCache.work_uuid.in_(work_uuids))
@@ -1212,15 +1224,17 @@ def _enrich_candidate_metadata(
         .scalars()
         .all()
     )
-
     cache_map: Dict[str, EnrichmentCache] = {str(c.work_uuid): c for c in caches}
 
-    # Batch-load Person relationships so WorkResponse serialization
-    # never gets null author on frontend cards.
+    # Reload Work with all relationships so WorkResponse.model_validate() works.
     works = (
         db.execute(
             select(Work)
-            .options(joinedload(Work.person))
+            .options(
+                selectinload(Work.person),
+                selectinload(Work.editions),
+                selectinload(Work.series_links).selectinload("series"),
+            )
             .where(Work.work_uuid.in_(work_uuids))
         )
         .unique()
@@ -1229,22 +1243,19 @@ def _enrich_candidate_metadata(
     )
     work_map: Dict[str, Work] = {str(w.work_uuid): w for w in works}
 
-    for candidate in candidates:
+    for candidate in needs_enrichment:
         loaded_work = work_map.get(candidate.work_uuid)
         if loaded_work:
             candidate.raw_record = loaded_work
         cache = cache_map.get(candidate.work_uuid)
         if cache:
-            # Populate Tower 1 profile from LLM extraction snapshot
             if cache.tower1_snapshot and isinstance(cache.tower1_snapshot, dict):
                 candidate.book_inferred_profile = {
                     k: float(v)
                     for k, v in cache.tower1_snapshot.items()
                     if isinstance(v, (int, float))
                 }
-            # Propagate narrative flag — False zeros Tower1 in the reranker
             candidate.is_narrative = cache.is_narrative
-            # Book description for expandable card detail
             candidate.description = cache.description or None
 
 
@@ -1455,9 +1466,8 @@ def _build_tbr_matches(
     """
     Builds the TBR strip — mood-matched TBR books surfaced as a separate component.
 
-    Scores each active TBR book by IDF-weighted trope overlap with the current query.
-    Returns top 3 with overlap > 0 (mood-relevant only). Books with no overlap are
-    excluded — if your TBR is all dark romance and you query sci-fi, the strip is empty.
+    All DB work is batched: 4 queries total regardless of TBR size, replacing
+    the previous 4-queries-per-entry N+1 pattern.
     """
     from app.models.authors import Person
     from app.models.books import Edition
@@ -1467,47 +1477,78 @@ def _build_tbr_matches(
     if not tbr_uuids or not query_trope_names:
         return []
 
+    # Parse UUIDs — skip any malformed entries
+    valid_uuids: List[uuid.UUID] = []
+    for wu in tbr_uuids:
+        try:
+            valid_uuids.append(uuid.UUID(wu))
+        except ValueError:
+            continue
+    if not valid_uuids:
+        return []
+
+    # ── Batch 1: Works ────────────────────────────────────────────────────────
+    works_list = (
+        db.execute(select(Work).where(Work.work_uuid.in_(valid_uuids)))
+        .scalars()
+        .all()
+    )
+    tbr_work_map: Dict[str, Work] = {str(w.work_uuid): w for w in works_list}
+
+    # ── Batch 2: Persons ──────────────────────────────────────────────────────
+    person_uuids = list({w.person_uuid for w in works_list})
+    persons_list = (
+        db.execute(select(Person).where(Person.person_uuid.in_(person_uuids)))
+        .scalars()
+        .all()
+    )
+    person_map: Dict[str, str] = {
+        str(p.person_uuid): p.canonical_name for p in persons_list
+    }
+
+    # ── Batch 3: Editions (cover_url) ─────────────────────────────────────────
+    editions_list = (
+        db.execute(select(Edition).where(Edition.work_uuid.in_(valid_uuids)))
+        .scalars()
+        .all()
+    )
+    # Take first cover per work
+    cover_map: Dict[str, Optional[str]] = {}
+    for ed in editions_list:
+        key = str(ed.work_uuid)
+        if key not in cover_map and ed.cover_url:
+            cover_map[key] = ed.cover_url
+
+    # ── Batch 4: Trope names for all TBR works ────────────────────────────────
+    trope_rows = db.execute(
+        select(BookTrope.work_uuid, Trope.canonical_name)
+        .join(Trope, BookTrope.trope_uuid == Trope.trope_uuid)
+        .where(BookTrope.work_uuid.in_(valid_uuids))
+    ).all()
+    tbr_trope_map: Dict[str, List[str]] = {}
+    for row in trope_rows:
+        key = str(row.work_uuid)
+        tbr_trope_map.setdefault(key, []).append(row.canonical_name)
+
+    # ── Score and build results in-memory ─────────────────────────────────────
     query_set = set(query_trope_names)
     results = []
 
-    for work_uuid_str in tbr_uuids:
-        try:
-            _work_uuid = uuid.UUID(work_uuid_str)
-        except ValueError:
-            continue
-
-        work = db.execute(
-            select(Work).where(Work.work_uuid == _work_uuid)
-        ).scalar_one_or_none()
+    for wid in valid_uuids:
+        wid_str = str(wid)
+        work = tbr_work_map.get(wid_str)
         if not work:
             continue
 
-        book_trope_names = (
-            db.execute(
-                select(Trope.canonical_name)
-                .join(BookTrope, BookTrope.trope_uuid == Trope.trope_uuid)
-                .where(BookTrope.work_uuid == _work_uuid)
-            )
-            .scalars()
-            .all()
-        )
-
+        book_trope_names = tbr_trope_map.get(wid_str, [])
         overlap = reranker.calculate_trope_overlap(
-            list(query_trope_names), list(book_trope_names), idf_weights
+            query_trope_names, book_trope_names, idf_weights
         )
         if overlap <= 0:
             continue
 
-        person = db.execute(
-            select(Person).where(Person.person_uuid == work.person_uuid)
-        ).scalar_one_or_none()
-        author_name = person.canonical_name if person else ""
-
-        edition = db.execute(
-            select(Edition).where(Edition.work_uuid == _work_uuid)
-        ).scalar_one_or_none()
-        cover_url = edition.cover_url if edition else None
-
+        author_name = person_map.get(str(work.person_uuid), "")
+        cover_url = cover_map.get(wid_str)
         overlapping = [t for t in book_trope_names if t in query_set]
         explanation = (
             f"Saved for {', '.join(overlapping[:3])} — matches your current mood."
@@ -1517,7 +1558,7 @@ def _build_tbr_matches(
 
         results.append(
             TBRMatch(
-                work_uuid=work_uuid_str,
+                work_uuid=wid_str,
                 title=work.title,
                 author_name=author_name,
                 cover_url=cover_url,
@@ -1536,26 +1577,26 @@ def _pull_vector_candidates(
     """
     Embed the vibe (pure mood) for Qdrant vector search.
 
-    Trope filtering strategy (two-tier for backward compatibility):
-      Tier 1 — Qdrant-native MatchAny filter: when query_trope_names provided,
-               passed as trope_filter to search_knn. Qdrant filters against the
-               indexed `trope_names` payload field. Only books enriched AFTER
-               this deploy have `trope_names` in their payload.
-      Tier 2 — Python post-filter: for hits whose payload lacks `trope_names`
-               (pre-deploy books), fall back to the existing DB count query.
-               This tier self-eliminates as the catalog is re-indexed.
+    All DB work is batched upfront — 4 queries total regardless of result count:
+      1. Batch Work load (with person, editions, series_links eager-loaded)
+      2. Batch EnrichmentCache load
+      3. Batch SeriesWork membership set (for standalone/no_series constraint)
+      4. Batch trope-count map (for pre-deploy Tier-2 post-filter)
 
-    Constraint gates (standalone_only, no_ya, etc.) remain Python post-filters
-    since they query series membership and enrichment cache — not in Qdrant payload.
+    Each hit is then evaluated via in-memory dict/set lookups — no per-hit DB calls.
+    This eliminates the previous N+1 pattern (3 queries × 50 hits = ~12s on Heroku Postgres).
     """
+    from app.models.series import SeriesWork
+    from app.models.tropes import BookTrope as _BT
+    from app.models.tropes import Trope as _Trope
+    from sqlalchemy.orm import selectinload
+
     try:
         query_vector = llm.embed(vibe)
     except Exception as e:
         logger.error(f"Failed to embed vibe for vector search: {e}")
         return []
 
-    # Increase candidate pool when trope filtering at Qdrant level —
-    # the filter reduces the pool, so ask for more to ensure enough candidates.
     qdrant_limit = 50 if query_trope_names else 30
 
     try:
@@ -1563,91 +1604,177 @@ def _pull_vector_candidates(
             "books_catalog",
             query_vector,
             limit=qdrant_limit,
-            # Pass tropes as Qdrant-native filter — books without `trope_names`
-            # in their payload are NOT excluded here (backward compatible).
-            # The Python post-filter below handles pre-deploy books.
             trope_filter=query_trope_names if query_trope_names else None,
         )
     except Exception as e:
         logger.error(f"Vector search failed: {e}")
         return []
 
-    from app.models.series import SeriesWork
-    from app.models.tropes import BookTrope as _BT
-    from app.models.tropes import Trope as _Trope
+    if not search_results:
+        return []
 
-    candidates = []
+    # ── Batch 1: parse all hit UUIDs from Qdrant ─────────────────────────────
+    hit_uuids: List[uuid.UUID] = []
+    hit_payload_map: Dict[str, dict] = {}  # work_uuid_str → qdrant payload
+    hit_score_map: Dict[str, float] = {}
     for hit in search_results:
-        work_uuid = hit["id"]
-        work = db.execute(
-            select(Work).where(Work.work_uuid == uuid.UUID(work_uuid))
-        ).scalar_one_or_none()
+        try:
+            wid = uuid.UUID(hit["id"])
+        except (ValueError, KeyError):
+            continue
+        hit_uuids.append(wid)
+        hit_payload_map[str(wid)] = hit.get("payload", {})
+        hit_score_map[str(wid)] = hit["score"]
+
+    if not hit_uuids:
+        return []
+
+    # ── Batch 2: Work + relationships (1 query) ───────────────────────────────
+    works_loaded = (
+        db.execute(
+            select(Work)
+            .options(
+                selectinload(Work.person),
+                selectinload(Work.editions),
+                selectinload(Work.series_links).selectinload("series"),
+            )
+            .where(Work.work_uuid.in_(hit_uuids))
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    work_map: Dict[str, Work] = {str(w.work_uuid): w for w in works_loaded}
+
+    # ── Batch 3: EnrichmentCache (1 query) ───────────────────────────────────
+    caches_loaded = (
+        db.execute(
+            select(EnrichmentCache).where(EnrichmentCache.work_uuid.in_(hit_uuids))
+        )
+        .scalars()
+        .all()
+    )
+    cache_map: Dict[str, EnrichmentCache] = {
+        str(c.work_uuid): c for c in caches_loaded
+    }
+
+    # ── Batch 4: Series membership set (1 query, only if constraint active) ──
+    series_member_set: set = set()
+    need_series_check = constraints and (
+        getattr(constraints, "standalone_only", False)
+        or getattr(constraints, "no_series", False)
+    )
+    if need_series_check:
+        series_rows = (
+            db.execute(
+                select(SeriesWork.work_uuid).where(SeriesWork.work_uuid.in_(hit_uuids))
+            )
+            .scalars()
+            .all()
+        )
+        series_member_set = {str(w) for w in series_rows}
+
+    # ── Batch 5: Trope counts for pre-deploy Tier-2 filter (1 query) ─────────
+    # Only for hits that lack `trope_names` in their Qdrant payload (pre-deploy books).
+    # We group by work_uuid and filter to query tropes in one round-trip.
+    pre_deploy_uuids: List[uuid.UUID] = []
+    if query_trope_names:
+        for wid in hit_uuids:
+            payload = hit_payload_map.get(str(wid), {})
+            if not (payload.get("trope_names")):
+                pre_deploy_uuids.append(wid)
+
+    trope_count_map: Dict[str, int] = {}  # work_uuid_str → matching trope count
+    if pre_deploy_uuids and query_trope_names:
+        trope_rows = db.execute(
+            select(_BT.work_uuid, sa_func.count(_BT.trope_uuid).label("cnt"))
+            .join(_Trope, _Trope.trope_uuid == _BT.trope_uuid)
+            .where(_BT.work_uuid.in_(pre_deploy_uuids))
+            .where(_Trope.canonical_name.in_(query_trope_names))
+            .group_by(_BT.work_uuid)
+        ).all()
+        trope_count_map = {str(row.work_uuid): row.cnt for row in trope_rows}
+
+    # ── Batch 6: book trope names for all hits (1 query) ─────────────────────
+    # Populates candidate.book_trope_names so the reranker's zero-overlap gate
+    # and IDF scoring fire correctly. Previously these were never loaded on the
+    # vector path, so all books got the zero-trope pass-through score.
+    book_trope_rows = db.execute(
+        select(_BT.work_uuid, _Trope.canonical_name, _BT.confidence_score)
+        .join(_Trope, _Trope.trope_uuid == _BT.trope_uuid)
+        .where(_BT.work_uuid.in_(hit_uuids))
+        .order_by(_BT.work_uuid, _BT.confidence_score.desc())
+    ).all()
+    book_trope_name_map: Dict[str, List[str]] = {}
+    for row in book_trope_rows:
+        key = str(row.work_uuid)
+        if key not in book_trope_name_map:
+            book_trope_name_map[key] = []
+        if len(book_trope_name_map[key]) < 6:
+            book_trope_name_map[key].append(row.canonical_name)
+
+    # ── Apply gates and build candidates (in-memory only) ────────────────────
+    candidates: List[reranker.CandidateContext] = []
+    for wid in hit_uuids:
+        wid_str = str(wid)
+        work = work_map.get(wid_str)
         if not work:
             continue
 
-        # ── Constraint gates ──
-        if constraints:
-            # standalone_only: exclude works that belong to any series
-            if constraints.standalone_only or constraints.no_series:
-                in_series = db.execute(
-                    select(SeriesWork).where(SeriesWork.work_uuid == work.work_uuid)
-                ).scalar_one_or_none()
-                if in_series:
+        # Constraint gates — pure in-memory lookups
+        if need_series_check and wid_str in series_member_set:
+            continue
+
+        cache = cache_map.get(wid_str)
+        if constraints and getattr(constraints, "no_ya", False):
+            if cache and cache.raw_categories:
+                if any("young adult" in cat.lower() for cat in cache.raw_categories):
                     continue
 
-            # no_ya: exclude if YA-coded (check enrichment cache or tropes)
-            if constraints.no_ya:
-                cache = db.execute(
-                    select(EnrichmentCache).where(
-                        EnrichmentCache.work_uuid == work.work_uuid
-                    )
-                ).scalar_one_or_none()
-                if cache and cache.raw_categories:
-                    if any(
-                        "young adult" in cat.lower() for cat in cache.raw_categories
-                    ):
-                        continue
-
-        # ── Tier-2 trope post-filter: only for pre-deploy books ──
-        # If Qdrant already filtered via trope_names payload (Tier 1), the hit
-        # passed the filter at search time. We detect pre-deploy books by checking
-        # whether `trope_names` is absent from the hit payload.
+        # Tier-2 trope post-filter for pre-deploy books
         if query_trope_names:
-            payload = hit.get("payload", {})
-            payload_has_tropes = "trope_names" in payload and payload["trope_names"]
-            if not payload_has_tropes:
-                # Pre-deploy book: apply Python post-filter as fallback
-                book_trope_count = (
-                    db.execute(
-                        select(sa_func.count(_BT.trope_uuid))
-                        .join(_Trope, _Trope.trope_uuid == _BT.trope_uuid)
-                        .where(_BT.work_uuid == work.work_uuid)
-                        .where(_Trope.canonical_name.in_(query_trope_names))
-                    ).scalar()
-                    or 0
-                )
-                if book_trope_count == 0:
+            payload = hit_payload_map.get(wid_str, {})
+            if payload.get("trope_names"):
+                pass  # Tier-1 already filtered at Qdrant level
+            else:
+                # Pre-deploy: require at least one matching trope
+                if trope_count_map.get(wid_str, 0) == 0:
                     continue
 
-        cache = db.execute(
-            select(EnrichmentCache).where(EnrichmentCache.work_uuid == work.work_uuid)
-        ).scalar_one_or_none()
+        # Build enriched candidate in-place — no further DB calls needed
+        book_inferred_profile: Dict[str, float] = {}
+        is_narrative = True
+        description = None
+        if cache:
+            if cache.tower1_snapshot and isinstance(cache.tower1_snapshot, dict):
+                book_inferred_profile = {
+                    k: float(v)
+                    for k, v in cache.tower1_snapshot.items()
+                    if isinstance(v, (int, float))
+                }
+            is_narrative = cache.is_narrative
+            description = cache.description or None
+
         candidates.append(
             reranker.CandidateContext(
-                work_uuid=str(work.work_uuid),
+                work_uuid=wid_str,
                 title=work.title,
-                base_vector_score=hit["score"],
+                base_vector_score=hit_score_map.get(wid_str, 0.0),
                 is_tbr_context_match=False,
-                community_buzz_score=(cache.community_buzz_score or 0.0)
-                if cache
-                else 0.0,
+                community_buzz_score=(cache.community_buzz_score or 0.0) if cache else 0.0,
                 seen_recently=False,
-                book_inferred_profile={},
-                raw_record=work,
+                book_inferred_profile=book_inferred_profile,
+                book_trope_names=book_trope_name_map.get(wid_str, []),
+                is_narrative=is_narrative,
+                description=description,
+                raw_record=work,  # fully loaded with person, editions, series_links
                 match_source="vector",
+                # Sentinel: tells _enrich_candidate_metadata to skip DB calls
+                is_in_tbr=False,
             )
         )
     return candidates
+
 
 
 def _generate_llm_expansion(

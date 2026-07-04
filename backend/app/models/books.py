@@ -44,6 +44,37 @@ class Work(Base):
                     return edition.cover_url
         return None
 
+    @property
+    def page_count(self) -> Optional[int]:
+        """Return page count from the first edition that has one."""
+        if self.editions:
+            for edition in self.editions:
+                if edition.page_count is not None:
+                    return edition.page_count
+        return None
+
+    @property
+    def publication_year(self) -> Optional[int]:
+        """Derive publication year from publication_date or first edition."""
+        if self.publication_date:
+            return self.publication_date.year
+        if self.editions:
+            for edition in self.editions:
+                if edition.publication_date:
+                    return edition.publication_date.year
+        return None
+
+    @property
+    def series(self):
+        """Return the primary SeriesWork link (for SeriesInfo serialization), or None."""
+        if self.series_links:
+            # Prefer core storyline entries; fall back to first link
+            core = [sl for sl in self.series_links if sl.is_core_storyline]
+            link = core[0] if core else self.series_links[0]
+            # Return an object whose attributes match SeriesInfo
+            return _SeriesInfoProxy(link)
+        return None
+
     # Relationships
     person: Mapped["Person"] = relationship("Person", back_populates="works")
     editions: Mapped[List["Edition"]] = relationship("Edition", back_populates="work")
@@ -73,3 +104,20 @@ class Edition(Base):
 
     # Relationships
     work: Mapped["Work"] = relationship("Work", back_populates="editions")
+
+
+class _SeriesInfoProxy:
+    """
+    Lightweight bridge so `Work.series` (a property returning a SeriesWork link)
+    presents the attribute shape that `SeriesInfo(from_attributes=True)` expects:
+      series_uuid, title, order_float, is_core_storyline
+    """
+
+    __slots__ = ("series_uuid", "title", "order_float", "is_core_storyline")
+
+    def __init__(self, link: "SeriesWork") -> None:
+        self.series_uuid = link.series.series_uuid
+        self.title = link.series.title
+        self.order_float = link.order_float
+        self.is_core_storyline = link.is_core_storyline
+
