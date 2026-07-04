@@ -89,16 +89,17 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
     try:
         logger.info(f"Checking tracked authors for new releases (limit={limit})...")
 
-        # Get all tracked author entries, ordered by last checked (oldest first)
-        tracked_rows = (
-            db.execute(
-                select(TrackedAuthor)
-                .order_by(TrackedAuthor.last_known_release_date.asc().nullsfirst())
-                .limit(limit)
-            )
-            .scalars()
-            .all()
-        )
+        # Get tracked author entries with raw SQL — avoids Person→Series ORM mapper issue
+        tracked_rows = db.execute(
+            text(
+                "SELECT ta.user_uuid, ta.person_uuid, p.canonical_name "
+                "FROM tracked_authors ta "
+                "JOIN persons p ON p.person_uuid = ta.person_uuid "
+                "ORDER BY ta.last_known_release_date ASC NULLS FIRST "
+                "LIMIT :limit"
+            ),
+            {"limit": limit},
+        ).all()
 
         if not tracked_rows:
             logger.info("No tracked authors found — skipping release check.")
@@ -112,15 +113,8 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
             days=RELEASE_WINDOW_FUTURE_DAYS
         )
 
-        for ta in tracked_rows:
-            person = db.execute(
-                select(Person).where(Person.person_uuid == ta.person_uuid)
-            ).scalar_one_or_none()
-            if not person:
-                continue
-
-            author_name = person.canonical_name
-            logger.info(f"Checking releases for: {author_name} (user {ta.user_uuid})")
+        for user_uuid, person_uuid, author_name in tracked_rows:
+            logger.info(f"Checking releases for: {author_name} (user {user_uuid})")
 
             try:
                 results = gb.search_by_title_author(
@@ -161,7 +155,7 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
                 # If the user dismissed the old one, create a fresh event so it re-surfaces.
                 already_notified = db.execute(
                     select(InteractionEvent.event_uuid).where(
-                        InteractionEvent.user_uuid == ta.user_uuid,
+                        InteractionEvent.user_uuid == user_uuid,
                         InteractionEvent.event_type == EventType.AUTHOR_NEW_RELEASE,
                         InteractionEvent.mood_tags["title"].as_string() == title,
                         InteractionEvent.mood_tags["author_name"].as_string()
@@ -177,12 +171,12 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
                 work = db.execute(
                     select(Work).where(
                         func.lower(Work.title) == title.lower(),
-                        Work.person_uuid == ta.person_uuid,
+                        Work.person_uuid == person_uuid,
                     )
                 ).scalar_one_or_none()
 
                 event = InteractionEvent(
-                    user_uuid=ta.user_uuid,
+                    user_uuid=user_uuid,
                     work_uuid=work.work_uuid if work else None,
                     event_type=EventType.AUTHOR_NEW_RELEASE,
                     mood_tags={
@@ -197,9 +191,14 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
                 new_releases += 1
                 found_for_author += 1
 
-            # Update last known release date
+            # Update last known release date via raw SQL
             if found_for_author > 0:
-                ta.last_known_release_date = datetime.now(timezone.utc)
+                db.execute(
+                    text(
+                        "UPDATE tracked_authors SET last_known_release_date = now() WHERE user_uuid = :uid AND person_uuid = :pid"
+                    ),
+                    {"uid": user_uuid, "pid": person_uuid},
+                )
 
             logger.info(f"  {author_name}: {found_for_author} new releases found")
 
@@ -368,5 +367,70 @@ def seed_niche_genre_from_books(self, work_uuids: list[str]):
     except Exception:
         db.rollback()
         logger.exception("Niche population failed")
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, max_retries=2, acks_late=True)
+def backfill_qdrant_trope_payloads(self, batch_size: int = 100):
+    """
+    One-off backfill: re-upsert Qdrant points with trope_names in payload
+    so the native MatchAny trope filter works for pre-deploy books.
+    """
+    db: Session = SessionLocal()
+    try:
+        from app.integrations import llm as l
+        from app.integrations import qdrant as q
+        from app.models.tropes import BookTrope as BT
+        from app.models.tropes import Trope as T
+
+        works = db.execute(
+            text(
+                "SELECT w.work_uuid, w.title, ec.description "
+                "FROM works w "
+                "JOIN enrichment_cache ec ON ec.work_uuid = w.work_uuid "
+                "WHERE w.enrichment_status = 'complete' "
+                "AND ec.description IS NOT NULL "
+                "LIMIT :limit"
+            ),
+            {"limit": batch_size},
+        ).all()
+
+        updated = 0
+        for wid, title, desc in works:
+            trope_names = (
+                db.execute(
+                    select(T.canonical_name)
+                    .join(BT, BT.trope_uuid == T.trope_uuid)
+                    .where(BT.work_uuid == wid)
+                    .where(BT.confidence_score >= 0.5)
+                )
+                .scalars()
+                .all()
+            )
+
+            if not trope_names:
+                continue
+
+            try:
+                embedding = l.embed(f"{title}. {desc or ''}")
+                q.upsert_vector(
+                    collection_name="books_catalog",
+                    point_id=str(wid),
+                    vector=embedding,
+                    payload={
+                        "work_uuid": str(wid),
+                        "title": title,
+                        "trope_names": trope_names,
+                    },
+                )
+                updated += 1
+            except Exception as e:
+                logger.warning(f"Failed to re-upsert {title}: {e}")
+
+        logger.info(f"Qdrant trope backfill: updated {updated}/{len(works)} points")
+    except Exception:
+        db.rollback()
+        logger.exception("Qdrant backfill failed")
     finally:
         db.close()
