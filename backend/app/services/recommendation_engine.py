@@ -469,19 +469,21 @@ def generate_recommendations(
         return count > 0
 
     if not candidates and query_trope_names:
-        # Stage 1: relax trope filter (partial match → no filter)
+        # Stage 1: relax trope filter — pull vector candidates in-memory, no API calls
         cascade_stage = 1
         logger.info("Cascade stage 1: zero candidates with trope filter. Relaxing.")
-        _handle_discovery_query(
-            db, vibe, expanded_query, constraints, None, candidates, seen
-        )
+        for c in _pull_vector_candidates(db, vibe, constraints, None):
+            if c.work_uuid not in seen:
+                candidates.append(c)
+                seen.add(c.work_uuid)
         if not candidates and constraints.any_active():
             cascade_stage = 2
             logger.info("Cascade stage 2: relaxing structural constraints")
             _excl = constraints.exclusionary_only()
-            _handle_discovery_query(
-                db, vibe, expanded_query, _excl, None, candidates, seen
-            )
+            for c in _pull_vector_candidates(db, vibe, _excl, None):
+                if c.work_uuid not in seen:
+                    candidates.append(c)
+                    seen.add(c.work_uuid)
             if not candidates and _excl.any_active():
                 cascade_stage = 3
                 logger.info(
@@ -492,9 +494,10 @@ def generate_recommendations(
         cascade_stage = 2
         logger.info("Cascade stage 2: relaxing structural constraints")
         _excl = constraints.exclusionary_only()
-        _handle_discovery_query(
-            db, vibe, expanded_query, _excl, query_trope_names, candidates, seen
-        )
+        for c in _pull_vector_candidates(db, vibe, _excl, query_trope_names):
+            if c.work_uuid not in seen:
+                candidates.append(c)
+                seen.add(c.work_uuid)
         if not candidates and _excl.any_active():
             cascade_stage = 3
             logger.info(
