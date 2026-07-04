@@ -411,10 +411,12 @@ def backfill_qdrant_trope_payloads(self, batch_size: int = 100):
         for wid, title, desc in works:
             trope_names = (
                 db.execute(
-                    select(T.canonical_name)
-                    .join(BT, BT.trope_uuid == T.trope_uuid)
-                    .where(BT.work_uuid == wid)
-                    .where(BT.confidence_score >= 0.5)
+                    text(
+                        "SELECT t.canonical_name FROM tropes t "
+                        "JOIN book_tropes bt ON bt.trope_uuid = t.trope_uuid "
+                        "WHERE bt.work_uuid = :wid AND bt.confidence_score >= 0.5"
+                    ),
+                    {"wid": wid},
                 )
                 .scalars()
                 .all()
