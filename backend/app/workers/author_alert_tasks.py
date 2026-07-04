@@ -183,7 +183,7 @@ def check_tracked_authors_for_releases(self, limit: int = 50):
                     text(
                         "INSERT INTO interaction_events "
                         "(event_uuid, user_uuid, work_uuid, event_type, event_timestamp, mood_tags) "
-                        "VALUES (gen_random_uuid(), :uid, :wid, 'author_new_release', now(), :tags::jsonb)"
+                        "VALUES (gen_random_uuid(), :uid, :wid, 'author_new_release', now(), :tags)"
                     ),
                     {
                         "uid": user_uuid,
