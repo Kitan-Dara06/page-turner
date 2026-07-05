@@ -1206,14 +1206,14 @@ def _enrich_candidate_metadata(
         return
 
     # Split: LLM candidates need DB enrichment; vector candidates are pre-enriched.
-    needs_enrichment = [
-        c for c in candidates if c.match_source != "vector"
-    ]
+    needs_enrichment = [c for c in candidates if c.match_source != "vector"]
 
     if not needs_enrichment:
         return
 
     from sqlalchemy.orm import selectinload
+
+    from app.models.series import SeriesWork
 
     work_uuids = [uuid.UUID(c.work_uuid) for c in needs_enrichment]
 
@@ -1233,7 +1233,7 @@ def _enrich_candidate_metadata(
             .options(
                 selectinload(Work.person),
                 selectinload(Work.editions),
-                selectinload(Work.series_links).selectinload("series"),
+                selectinload(Work.series_links).selectinload(SeriesWork.series),
             )
             .where(Work.work_uuid.in_(work_uuids))
         )
@@ -1241,7 +1241,7 @@ def _enrich_candidate_metadata(
         .scalars()
         .all()
     )
-    work_map: Dict[str, Work] = {str(w.work_uuid): w for w in works}
+    work_map: Dict[str, Work] = {str(w.work_uuid): w for w in enriched_works}
 
     for candidate in needs_enrichment:
         loaded_work = work_map.get(candidate.work_uuid)
@@ -1489,9 +1489,7 @@ def _build_tbr_matches(
 
     # ── Batch 1: Works ────────────────────────────────────────────────────────
     works_list = (
-        db.execute(select(Work).where(Work.work_uuid.in_(valid_uuids)))
-        .scalars()
-        .all()
+        db.execute(select(Work).where(Work.work_uuid.in_(valid_uuids))).scalars().all()
     )
     tbr_work_map: Dict[str, Work] = {str(w.work_uuid): w for w in works_list}
 
@@ -1586,10 +1584,11 @@ def _pull_vector_candidates(
     Each hit is then evaluated via in-memory dict/set lookups — no per-hit DB calls.
     This eliminates the previous N+1 pattern (3 queries × 50 hits = ~12s on Heroku Postgres).
     """
+    from sqlalchemy.orm import selectinload
+
     from app.models.series import SeriesWork
     from app.models.tropes import BookTrope as _BT
     from app.models.tropes import Trope as _Trope
-    from sqlalchemy.orm import selectinload
 
     try:
         query_vector = llm.embed(vibe)
@@ -1636,7 +1635,7 @@ def _pull_vector_candidates(
             .options(
                 selectinload(Work.person),
                 selectinload(Work.editions),
-                selectinload(Work.series_links).selectinload("series"),
+                selectinload(Work.series_links).selectinload(SeriesWork.series),
             )
             .where(Work.work_uuid.in_(hit_uuids))
         )
@@ -1654,9 +1653,7 @@ def _pull_vector_candidates(
         .scalars()
         .all()
     )
-    cache_map: Dict[str, EnrichmentCache] = {
-        str(c.work_uuid): c for c in caches_loaded
-    }
+    cache_map: Dict[str, EnrichmentCache] = {str(c.work_uuid): c for c in caches_loaded}
 
     # ── Batch 4: Series membership set (1 query, only if constraint active) ──
     series_member_set: set = set()
@@ -1761,7 +1758,9 @@ def _pull_vector_candidates(
                 title=work.title,
                 base_vector_score=hit_score_map.get(wid_str, 0.0),
                 is_tbr_context_match=False,
-                community_buzz_score=(cache.community_buzz_score or 0.0) if cache else 0.0,
+                community_buzz_score=(cache.community_buzz_score or 0.0)
+                if cache
+                else 0.0,
                 seen_recently=False,
                 book_inferred_profile=book_inferred_profile,
                 book_trope_names=book_trope_name_map.get(wid_str, []),
@@ -1774,7 +1773,6 @@ def _pull_vector_candidates(
             )
         )
     return candidates
-
 
 
 def _generate_llm_expansion(
