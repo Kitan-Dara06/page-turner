@@ -3,17 +3,18 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
 from app.dependencies import get_current_user_uuid
-from app.models.tropes import Trope, BookTrope
 from app.models.authors import Person
 from app.models.books import Edition, Work
 from app.models.events import AbandonmentStage, EventType, InteractionEvent
 from app.models.recommendations import RecommendationLog, RecommendationStatus
 from app.models.tbr import TBREntry, TBRStatus
+from app.models.tropes import BookTrope, Trope
 from app.schemas.books import WorkResponse
 from app.schemas.recommendations import (
     CheckpointItem,
@@ -25,6 +26,7 @@ from app.schemas.recommendations import (
     TBRDropCandidate,
 )
 from app.services import recommendation_engine
+from app.workers.recommendation_tasks import generate_recommendations_async
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,6 +59,50 @@ def get_recommendations(
             status_code=500,
             detail="An error occurred while generating recommendations. Please try again.",
         )
+
+
+# ── Async endpoints ──
+
+
+class AsyncRecommendResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+@router.post("/async", response_model=AsyncRecommendResponse)
+def submit_async_recommendation(
+    request: RecommendationRequest,
+    user_uuid: str = Depends(get_current_user_uuid),
+):
+    """FR-QR-01a: Fire-and-forget async recommendation via Celery."""
+    task_id = f"rec_{uuid.uuid4().hex[:12]}"
+    logger.info(f"[{user_uuid[:8]}] Async recommendation submitted: {task_id}")
+    generate_recommendations_async.delay(user_uuid, request.query, task_id)
+    return {"task_id": task_id, "status": "processing"}
+
+
+@router.get("/status/{task_id}")
+def get_recommendation_status(
+    task_id: str,
+):
+    """FR-QR-01b: Poll for async recommendation results from Redis."""
+    import json
+
+    from app.workers.recommendation_tasks import celery_app
+
+    redis = celery_app.backend.client
+    if not redis:
+        raise HTTPException(status_code=500, detail="Result backend not available.")
+
+    raw = redis.get(task_id)
+    if not raw:
+        return {"status": "pending", "task_id": task_id}
+
+    data = json.loads(raw)
+    if data.get("status") == "error":
+        raise HTTPException(status_code=500, detail=data.get("detail", "Unknown error"))
+
+    return data
 
 
 @router.get("/checkpoint", response_model=CheckpointResponse)
@@ -256,20 +302,22 @@ def list_public_tropes(db: Session = Depends(get_db)):
     Returns tropes having at least one work association, ordered descending by frequency.
     """
     try:
-        rows = (
-            db.execute(
-                select(Trope.canonical_name, Trope.trope_uuid, func.count(BookTrope.work_uuid).label("book_count"))
-                .join(BookTrope, BookTrope.trope_uuid == Trope.trope_uuid)
-                .group_by(Trope.trope_uuid, Trope.canonical_name)
-                .order_by(func.count(BookTrope.work_uuid).desc())
-            ).all()
-        )
+        rows = db.execute(
+            select(
+                Trope.canonical_name,
+                Trope.trope_uuid,
+                func.count(BookTrope.work_uuid).label("book_count"),
+            )
+            .join(BookTrope, BookTrope.trope_uuid == Trope.trope_uuid)
+            .group_by(Trope.trope_uuid, Trope.canonical_name)
+            .order_by(func.count(BookTrope.work_uuid).desc())
+        ).all()
         return {
             "tropes": [
                 {
                     "canonical_name": r.canonical_name,
                     "trope_uuid": str(r.trope_uuid),
-                    "book_count": r.book_count
+                    "book_count": r.book_count,
                 }
                 for r in rows
             ]
@@ -290,7 +338,9 @@ def get_books_by_trope(trope_uuid: str, db: Session = Depends(get_db)):
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid trope UUID format.")
 
-        trope = db.execute(select(Trope).where(Trope.trope_uuid == trope_id)).scalar_one_or_none()
+        trope = db.execute(
+            select(Trope).where(Trope.trope_uuid == trope_id)
+        ).scalar_one_or_none()
         if not trope:
             raise HTTPException(status_code=404, detail="Trope not found.")
 
@@ -312,7 +362,9 @@ def get_books_by_trope(trope_uuid: str, db: Session = Depends(get_db)):
                 try:
                     works.append(WorkResponse.model_validate(bt.work))
                 except Exception as ex:
-                    logger.warning(f"Failed to serialize work {bt.work_uuid} in trope view: {ex}")
+                    logger.warning(
+                        f"Failed to serialize work {bt.work_uuid} in trope view: {ex}"
+                    )
 
         return {
             "trope": {
@@ -325,4 +377,6 @@ def get_books_by_trope(trope_uuid: str, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         logger.error(f"Error fetching books for trope {trope_uuid}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve books for trope.")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve books for trope."
+        )

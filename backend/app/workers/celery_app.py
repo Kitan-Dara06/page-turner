@@ -40,6 +40,7 @@ celery_app.autodiscover_tasks(
         "app.workers.enrichment_tasks",
         "app.workers.author_alert_tasks",
         "app.workers.tbr_decay_tasks",
+        "app.workers.recommendation_tasks",
     ]
 )
 
