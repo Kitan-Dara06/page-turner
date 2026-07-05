@@ -3,6 +3,7 @@
 import json
 import logging
 import uuid
+from json import JSONEncoder
 
 from app.db.session import SessionLocal
 from app.services import recommendation_engine
@@ -11,6 +12,13 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 REDIS_TTL = 300  # 5 minutes
+
+
+class _UUIDEncoder(JSONEncoder):
+    def default(self, o):
+        if isinstance(o, uuid.UUID):
+            return str(o)
+        return super().default(o)
 
 
 @celery_app.task(bind=True, max_retries=1, acks_late=True, time_limit=60)
@@ -26,7 +34,7 @@ def generate_recommendations_async(self, user_uuid: str, raw_query: str, task_id
     try:
         redis.set(
             task_id,
-            json.dumps({"status": "processing", "task_id": task_id}),
+            json.dumps({"status": "processing", "task_id": task_id}, cls=_UUIDEncoder),
             ex=REDIS_TTL,
         )
 
@@ -64,7 +72,7 @@ def generate_recommendations_async(self, user_uuid: str, raw_query: str, task_id
             "unmatched_tropes": response.unmatched_tropes,
         }
 
-        redis.set(task_id, json.dumps(result), ex=REDIS_TTL)
+        redis.set(task_id, json.dumps(result, cls=_UUIDEncoder), ex=REDIS_TTL)
         logger.info(
             f"Async recommendation complete: {task_id} ({len(response.results)} results)"
         )
@@ -79,7 +87,8 @@ def generate_recommendations_async(self, user_uuid: str, raw_query: str, task_id
                     "status": "error",
                     "task_id": task_id,
                     "detail": str(e),
-                }
+                },
+                cls=_UUIDEncoder,
             ),
             ex=REDIS_TTL,
         )
