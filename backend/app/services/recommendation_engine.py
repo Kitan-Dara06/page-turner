@@ -1241,7 +1241,7 @@ def _enrich_candidate_metadata(
         .scalars()
         .all()
     )
-    work_map: Dict[str, Work] = {str(w.work_uuid): w for w in enriched_works}
+    work_map: Dict[str, Work] = {str(w.work_uuid): w for w in works}
 
     for candidate in needs_enrichment:
         loaded_work = work_map.get(candidate.work_uuid)
