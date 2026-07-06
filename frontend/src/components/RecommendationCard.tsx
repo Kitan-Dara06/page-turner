@@ -30,6 +30,7 @@ export default function RecommendationCard({
   const [swipeDir, setSwipeDir] = useState<SwipeDirection>(null);
   const [showUndo, setShowUndo] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const touchDelta = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -41,6 +42,7 @@ export default function RecommendationCard({
     setSwipeDir(null);
     setShowUndo(false);
     setLastAction(null);
+    setExpanded(false);
     touchDelta.current = { x: 0, y: 0 };
     if (undoTimer.current) clearTimeout(undoTimer.current);
   }, [work.work_uuid]);
@@ -279,6 +281,24 @@ export default function RecommendationCard({
                 "Surfaced because it matches your recent cravings and taste footprint."}
             </p>
           </div>
+
+          {/* Expandable plot details / description */}
+          {item.description && (
+            <div className={styles.detailSection}>
+              <button
+                className={styles.seeMoreBtn}
+                onClick={() => setExpanded(!expanded)}
+                aria-expanded={expanded}
+              >
+                {expanded ? "▲ Hide Details" : "▼ See More"}
+              </button>
+              {expanded && (
+                <div className={styles.detailBody}>
+                  <p className={styles.plotDescription}>{item.description}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Floating actions in the bottom right of the card context */}
           <div className={styles.actions}>

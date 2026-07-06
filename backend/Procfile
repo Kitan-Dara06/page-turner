@@ -1,2 +1,2 @@
 web: uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
-worker: celery -A app.workers.celery_app worker -B --loglevel=info
+worker: PYTHONPATH=backend celery -A backend.app.workers.celery_app worker -B --loglevel=info --concurrency=4 --max-memory-per-child=120000

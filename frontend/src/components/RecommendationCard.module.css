@@ -154,6 +154,55 @@
     color: var(--text-secondary);
 }
 
+/* ── Expandable Plot Details / See More ── */
+.detailSection {
+    margin-bottom: 16px;
+}
+
+.seeMoreBtn {
+    font-family: "Inter", sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: none;
+    border: 1px solid var(--border-accent);
+    border-radius: var(--radius-full);
+    padding: 6px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.seeMoreBtn:hover {
+    background: var(--accent-glow);
+    border-color: var(--accent);
+}
+
+.detailBody {
+    margin-top: 12px;
+    padding: 16px;
+    background: var(--bg-mid);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    animation: detailIn 0.25s ease;
+}
+
+@keyframes detailIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.plotDescription {
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
 /* Float actions at the bottom right */
 .actions {
     display: flex;
