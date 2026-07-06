@@ -220,6 +220,18 @@ export interface ReleaseResponse {
 
 // ── API Error ─────────────────────────────────────────────────
 
+export interface CheckpointUpdateItem {
+  rec_uuid: string;
+  status: CheckpointStatus | "reread";
+  abandonment_stage?: "barely_started" | "halfway" | "nearly_finished";
+  stated_rating?: number; // 1-5
+}
+
+export interface CheckpointUpdateResponse {
+  processed: number;
+  errors: string[];
+}
+
 export class ApiError extends Error {
   status: number;
   detail: string;

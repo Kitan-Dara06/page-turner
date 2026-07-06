@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import {
   CheckpointItem,
   CheckpointStatus,
+  CheckpointUpdateItem,
   TBRDropCandidate,
 } from "@/lib/types";
-import { feedback, tbr } from "@/lib/api";
+import { feedback, recommendations, tbr } from "@/lib/api";
 import BookCover from "./BookCover";
 import styles from "./CheckpointModal.module.css";
 
@@ -87,13 +88,15 @@ export default function CheckpointModal({
     // Zero friction: instantly dismiss
     dismissAndComplete();
 
-    // Fire API call in the background
+    // Fire checkpoint update in the background — updates RecommendationLog status
+    // so the book doesn't re-appear on the next checkpoint fetch.
     try {
-      await feedback.submit({
-        work_uuid: readingItem.work.work_uuid,
-        event_type: "checkpoint_update",
-        checkpoint_status: status,
-      });
+      await recommendations.updateCheckpoint([
+        {
+          rec_uuid: readingItem.rec_uuid,
+          status: status,
+        },
+      ]);
     } catch {
       /* background failure is silent */
     }

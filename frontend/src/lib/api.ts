@@ -8,6 +8,8 @@ import {
   ApiError,
   AuthorCatalog,
   CheckpointResponse,
+  CheckpointUpdateItem,
+  CheckpointUpdateResponse,
   FeedbackResponse,
   FeedbackSubmit,
   FlashcardResponse,
@@ -105,6 +107,16 @@ export const recommendations = {
   /** FR-FL-02: Fetch books delivered since the last checkpoint. */
   getCheckpoint(): Promise<CheckpointResponse> {
     return apiFetch<CheckpointResponse>("/api/v1/recommend/checkpoint");
+  },
+
+  /** FR-FL-02/03/04: Submit checkpoint status updates. */
+  updateCheckpoint(
+    updates: CheckpointUpdateItem[],
+  ): Promise<CheckpointUpdateResponse> {
+    return apiFetch<CheckpointUpdateResponse>("/api/v1/recommend/checkpoint", {
+      method: "POST",
+      body: JSON.stringify({ updates }),
+    });
   },
   getTropes(): Promise<{ tropes: TropeItem[] }> {
     return apiFetch<{ tropes: TropeItem[] }>("/api/v1/recommend/tropes");
