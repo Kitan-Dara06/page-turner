@@ -14,13 +14,11 @@ import {
   FeedbackSubmit,
   FlashcardResponse,
   FlashcardSubmit,
-  RecommendationRequest,
   RecommendationResponse,
   ReleaseResponse,
   TBRAddRequest,
   TBREntryResponse,
   WorkResponse,
-  CalibrationData,
   TropeItem,
   TropeDetailResponse,
   TimelineResponse,
@@ -91,17 +89,45 @@ export const onboarding = {
       body: JSON.stringify(payload),
     });
   },
+
+  /** Seed the engine with books the user has already read (3-books seeder). */
+  seed(books: { title: string }[]): Promise<{
+    status: string;
+    books_seeded: number;
+    resolved_books: {
+      title: string;
+      author: string;
+      work_uuid: string | null;
+      cover_url: string | null;
+      resolved: boolean;
+    }[];
+    profile_updated: boolean;
+  }> {
+    return apiFetch<any>("/api/v1/onboarding/seed", {
+      method: "POST",
+      body: JSON.stringify({ books }),
+    });
+  },
 };
 
 // ── Recommendations ───────────────────────────────────────────
 
 export const recommendations = {
-  /** FR-QR-01–07: Submit a natural-language query and get results. */
-  query(payload: RecommendationRequest): Promise<RecommendationResponse> {
-    return apiFetch<RecommendationResponse>("/api/v1/recommend/", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  /** FR-QR-01a: Submit an async recommendation task — returns immediately with task_id. */
+  submitAsync(query: string): Promise<{ task_id: string; status: string }> {
+    return apiFetch<{ task_id: string; status: string }>(
+      "/api/v1/recommend/async",
+      { method: "POST", body: JSON.stringify({ query }) },
+    );
+  },
+
+  /** FR-QR-01b: Poll for async recommendation results from Redis. */
+  pollStatus(
+    taskId: string,
+  ): Promise<RecommendationResponse & { status: string; task_id: string }> {
+    return apiFetch<
+      RecommendationResponse & { status: string; task_id: string }
+    >(`/api/v1/recommend/status/${taskId}`);
   },
 
   /** FR-FL-02: Fetch books delivered since the last checkpoint. */
@@ -253,5 +279,21 @@ export const profile = {
   /** Returns temporal reading-pattern insights. */
   getRhythm(): Promise<RhythmResponse> {
     return apiFetch<RhythmResponse>("/api/v1/profile/rhythm");
+  },
+};
+
+// ── Books ──────────────────────────────────────────────────────
+
+export const books = {
+  /** Log a book manually — fires enrichment pipeline for books not yet in the catalog. */
+  log(
+    title: string,
+    author: string,
+    isbn?: string,
+  ): Promise<{ status: string; message: string }> {
+    return apiFetch<{ status: string; message: string }>("/api/v1/books/log", {
+      method: "POST",
+      body: JSON.stringify({ title, author, isbn }),
+    });
   },
 };

@@ -89,36 +89,12 @@ export default function HomePage() {
   async function fireQuery(q: string) {
     setState("loading");
     try {
-      // Submit async task
-      const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-      const token = (await import("@/lib/api")).getAuthToken();
-      const submitRes = await fetch(`${BASE}/api/v1/recommend/async`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ query: q }),
-      });
-      if (!submitRes.ok) throw new Error("Failed to submit");
-      const { task_id } = await submitRes.json();
+      const { task_id } = await recApi.submitAsync(q);
 
-      // Poll every 2s until complete
-      const poll = async (): Promise<any> => {
-        const statusRes = await fetch(
-          `${BASE}/api/v1/recommend/status/${task_id}`,
-          {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          },
-        );
-        if (!statusRes.ok) throw new Error("Status check failed");
-        return statusRes.json();
-      };
-
-      let data = await poll();
+      let data = await recApi.pollStatus(task_id);
       while (data.status === "processing" || data.status === "pending") {
         await new Promise((r) => setTimeout(r, 2000));
-        data = await poll();
+        data = await recApi.pollStatus(task_id);
       }
 
       if (data.status === "complete") {
@@ -126,7 +102,7 @@ export default function HomePage() {
         setActiveCardIndex(0);
         setState("results");
       } else {
-        throw new Error(data.detail || "Unknown error");
+        throw new Error((data as any).detail || "Unknown error");
       }
     } catch {
       setState("idle");

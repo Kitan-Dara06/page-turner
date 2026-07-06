@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getAuthToken } from "@/lib/api";
+import { onboarding } from "@/lib/api";
 import styles from "./SeedInput.module.css";
 
 interface ResolvedBook {
@@ -48,28 +48,7 @@ export default function SeedInput({ onComplete }: Props) {
     setError(null);
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/onboarding/seed`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(getAuthToken()
-              ? { Authorization: `Bearer ${getAuthToken()}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            books: titles.map((t) => ({ title: t })),
-          }),
-        },
-      );
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || "Failed to seed books");
-      }
-
-      const data = await res.json();
+      const data = await onboarding.seed(titles.map((t) => ({ title: t })));
       setResolved(data.resolved_books || []);
       setSubmitted(true);
 
