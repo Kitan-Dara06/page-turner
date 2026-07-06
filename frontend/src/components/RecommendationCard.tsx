@@ -96,7 +96,7 @@ export default function RecommendationCard({
   );
 
   const handleAction = useCallback(
-    async (action: "save" | "read" | "pass" | "interested") => {
+    (action: "save" | "read" | "pass" | "interested") => {
       if (animateOut) return;
 
       // Map action to swipe direction for fly-off animation
@@ -109,15 +109,16 @@ export default function RecommendationCard({
       setSwipeDir(dirMap[action]);
       setAnimateOut(true);
 
-      await executeAction(action);
+      // Fire API in background — don't block the card transition
+      executeAction(action);
 
-      // Show undo toast
+      // Show undo toast with shorter delay for faster card-to-card flow
       setShowUndo(true);
       if (undoTimer.current) clearTimeout(undoTimer.current);
       undoTimer.current = setTimeout(() => {
         setShowUndo(false);
         onDecision();
-      }, ANIMATION_DURATION + 2500);
+      }, ANIMATION_DURATION + 1200);
     },
     [animateOut, executeAction, onDecision],
   );
@@ -170,7 +171,7 @@ export default function RecommendationCard({
         undoTimer.current = setTimeout(() => {
           setShowUndo(false);
           onDecision();
-        }, ANIMATION_DURATION + 2500);
+        }, ANIMATION_DURATION + 1200);
       } else if (absDx > absDy && dx < -SWIPE_THRESHOLD) {
         // Swipe left → Pass
         setSwipeDir("left");
@@ -181,7 +182,7 @@ export default function RecommendationCard({
         undoTimer.current = setTimeout(() => {
           setShowUndo(false);
           onDecision();
-        }, ANIMATION_DURATION + 2500);
+        }, ANIMATION_DURATION + 1200);
       } else if (absDx > absDy && dx > SWIPE_THRESHOLD) {
         // Swipe right → Interested
         setSwipeDir("right");
@@ -192,7 +193,7 @@ export default function RecommendationCard({
         undoTimer.current = setTimeout(() => {
           setShowUndo(false);
           onDecision();
-        }, ANIMATION_DURATION + 2500);
+        }, ANIMATION_DURATION + 1200);
       } else {
         // Snap back
         if (cardRef.current) {
